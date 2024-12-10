@@ -1,0 +1,13 @@
+(set! list (lambda x x))
+(load "preprocess/interp-preprocess.scm")
+(load "preprocess/interp-kernel.scm")
+(load "lib/scheme-libs.scm")
+
+(match (cdr (command-line))
+  (("-E" ,inp)
+   (map (lambda (e) (writeln e))
+    (cdr (uniquify-program (cons 'begin (read-sexps-from-path inp)))))
+   0)
+  ((,inp . ,())
+   (eval (uniquify-program (cons 'begin (read-sexps-from-path inp)))))
+  (,cmd-ln (error "unknown" cmd-ln)))

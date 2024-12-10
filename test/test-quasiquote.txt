@@ -1,0 +1,4 @@
+((cons* . xs))
+(define (cons* . xs))
+(define (cons* xs))
+(define (cons* . xs))

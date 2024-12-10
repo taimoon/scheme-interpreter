@@ -1,0 +1,1 @@
+(load "test/inp.scm")

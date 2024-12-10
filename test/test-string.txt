@@ -1,0 +1,12 @@
+#t
+"compile-and-run"
+"\"\\\t\n\""
+"ComPile-and-run"
+15
+#\d
+#t
+5
+"AAAAA"
+"reimu"
+5
+#t

@@ -1,0 +1,8 @@
+(let ((x 3)
+      (y 4)
+      (z #f))
+  (set! x (* x x))
+  (set! y (* y y))
+  (set! z (+ x y))
+  (write z)
+  (newline))

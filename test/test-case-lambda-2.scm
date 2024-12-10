@@ -1,0 +1,17 @@
+(let ()
+  (define max
+    (case-lambda
+      ((x) x)
+      ((x y) (if (< x y) y x))
+      ((x y . xs)
+       (if (< x y)
+           (apply max (cons y xs))
+           (apply max (cons x xs))))))
+  (define (write-line x)
+    (write x)
+    (newline))
+  (write-line (max 0))
+  (write-line (max 1 2))
+  (write-line (max 2 1))
+  (write-line (max 2 1 3 4 5))
+)
