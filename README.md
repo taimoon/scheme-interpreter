@@ -44,6 +44,16 @@ gcc -Wall main.c interp.c -o interp.out
 scheme --script run-test.scm      # run test using chez-scheme
 ```
 
+# Interlude
+
+This repo is a solution to SICP's exercise 5.51.
+
+SICP's exercise 5.51 asked the readers to implement scheme in C but by translating the explicit-control evaluator in the same book into C.
+Besides, the authors also tell readers that you will need storage allocation routine and other run-time supports.
+Though, one bad thing about this exercise is that authors did not warn readers how much efforts needed in doing these.
+And, I can't really grasp the whole chapter 5 back then. (XwX)
+
+
 # Implementation Note
 
 Beside know how to program in C and scheme,
@@ -87,6 +97,15 @@ For example,
 
 Though the statement appears very abstract.
 The example is actually adapted from chapter 8 of the book at the website [https://users.cs.utah.edu/~mflatt/past-courses/cs7520/public_html/s06/notes.pdf](https://users.cs.utah.edu/~mflatt/past-courses/cs7520/public_html/s06/notes.pdf).
+
+C does not guarantee tail call and C accumulates context for every function call.
+The workaround is to do trampoline by repeatively calling the global variable `NEXT`.
+C does not support first class "label" which I mean that we cannot really goto everywhere arbitrary like we do in assembly.
+Indeed, `NEXT` is a workaround to jump to everywhere arbitrary except with a severe limitation: it does not accept any parameters.
+C provides no direct support polymorphic procedures.
+Possible implementation is to use variadic procedures but I never learn how to and I decide that inventing new trick is more fun.
+Instead of learning new trick, I dictate that all trampoline procedures will get arguments from the global variables `VAL` and `CONT`.
+To sum, `NEXT` is the goto I am using.
 
 # Reference
 - [Essentials of Programming Languages - Third Edition](https://eopl3.com/)
