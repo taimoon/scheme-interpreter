@@ -12,8 +12,7 @@ On my fedora laptop, below is the elapsed time of bootstrapping the compiler and
 
 |fedora power setting|power save on|normal|performant|
 |-|-|-|-|
-|bootstrap|1 min|25s|22s|
-|test-interp-compiler-boot.sh|15 min|7 min|6 min|
+|test-interp-compiler-boot.sh|8 min|3 min 40s|3 min 20s|
 
 For comparison, the scheme compiler can bootstrap itself within few seconds.
 
