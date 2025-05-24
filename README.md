@@ -1,5 +1,7 @@
 # Scheme Interpreter
 
+NOTE: The capable of bootstrapping compiler is outdated as my scheme compiler has a lot of updates and the interpreter is not tested against new compiler implementation. It wouldn't work at the moment
+
 This repo contains scheme interpreter written in C.
 The goal is to develop an interpreter that can bootstrap my scheme compiler at [https://github.com/taimoon/scheme-compiler](https://github.com/taimoon/scheme-compiler).
 In other word, the program is meant to be thrown away once bootstrap the compiler and work in the new language.
