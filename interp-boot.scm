@@ -22,13 +22,6 @@
 (load "preprocess/interp-preprocess.scm")
 (load "preprocess/interp-kernel.scm")
 
-(define (for-each f xs)
-  (if (pair? xs)
-      (begin
-        (f (car xs))
-        (for-each f (cdr xs)))
-      '()))
-
 (define files '(
   "lib/scheme-libs.scm"
   "lib/reader.scm"
@@ -44,6 +37,7 @@
 
 (for-each
   (lambda (name)
+    (writeln name)
     (preprocess* name)
     (load (string-append "preprocess/" name)))
   files)

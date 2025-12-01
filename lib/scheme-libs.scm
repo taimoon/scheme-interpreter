@@ -30,6 +30,13 @@
               (apply f (cons (car ls) (map car more)))
               (map-more (cdr ls) (map cdr more)))))))
 
+(define (for-each f xs)
+  (if (pair? xs)
+      (begin
+        (f (car xs))
+        (for-each f (cdr xs)))
+      '()))
+
 (define (fold-left proc init xs)
   (if (pair? xs)
       (fold-left proc (proc init (car xs)) (cdr xs))
@@ -123,3 +130,8 @@
             (string-copy! (car ss) 0 res split (string-length (car ss)))
             (loop (cdr ss) (+ (string-length (car ss)) split)))  
           res))))
+
+(define char-whitespace?
+  (let ((whitespaces (map integer->char '(32 10 13 10 9))))
+    (lambda (c)
+      (if (memq c whitespaces) #t #f))))

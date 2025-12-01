@@ -1,8 +1,11 @@
-rm -rf scheme-compiler
+#!/bin/bash
+set -xe
+pushd scheme-compiler
 git clone https://github.com/taimoon/scheme-compiler.git
+git checkout int-v0
+popd
 gcc -Wall main.c interp.c -o interp.out
 ./interp.out interp-boot.scm
-
 compiler_path="scheme-compiler"
 
 cp interp.out "${compiler_path}/interp.out"
