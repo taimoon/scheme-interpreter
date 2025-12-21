@@ -1,8 +1,0 @@
-(write (if (integer? 0) #\0 #\1))
-(newline)
-(write (if (integer? #\0) #\0 #\1))
-(newline)
-(write (if (< -2 -3) #\L #\s))
-(newline)
-(write (if (<= -3 -2) #\L #\s))
-(newline)

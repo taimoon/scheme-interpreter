@@ -1,6 +1,6 @@
-#include"interp.h"
+#include "interp.h"
 
-int main(int argc, char *argv[]){
-    load_n_run(argc, argv);
+int main(int argc, char **argv) {
+    eval_entry(argc, argv);
     return 0;
 }

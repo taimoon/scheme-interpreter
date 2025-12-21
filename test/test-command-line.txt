@@ -1,1 +1,0 @@
-("interp.scm" "./test/test-command-line.scm" "reimu" "marisa" "-19" "2" "3" "5")

@@ -1,0 +1,13 @@
+((lambda (n m s)
+  (define (f k)
+     (if (< n 1)
+         s
+         (mul-iter (- n 1) m (+ m s))))
+  (define (mul-iter _n _m _s)
+    (set! n _n)
+    (set! m _m)
+    (set! s _s)
+    (call/cc f))
+  (write (eq? (mul-iter 12345 3 0) (* 12345 3)))
+  (newline))
+ 0 0 0)

@@ -1,3 +1,5 @@
+;;; Reference Implementation: https://srfi.schemers.org/srfi-200/srfi-200.html
+
 (define (match-expression? e) (and (pair? e) (eq? (car e) 'match)))
 (define (match-input-expr e) (cadr e))
 (define (match-clauses e) (cddr e))
@@ -29,12 +31,15 @@
       `(quote ,pattern)
       pattern))
 (define (compile-match p)
-  (let ((evaluated (gensym)))
-    `(let ((,evaluated ,(match-input-expr p)))
-      ,(compile-clauses evaluated (match-clauses p)))))
+  ;;; WORKAROUND: if input expression is symbol, then don't do gensym for it
+  (if (symbol? (match-input-expr p))
+      (compile-clauses (match-input-expr p) (match-clauses p))
+      (let ((evaluated (gensym)))
+        `(let ((,evaluated ,(match-input-expr p)))
+          ,(compile-clauses evaluated (match-clauses p))))))
 (define (compile-clauses value clauses)
   (if (null? clauses)
-      `'(error 'no-matching-pattern ,value)
+      `(error 'no-matching-pattern ,value)
       (compile-clause
         (list (list (clause-pattern (first-clause clauses)) value))
         '(and)

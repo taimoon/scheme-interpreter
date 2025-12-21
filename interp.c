@@ -1,692 +1,226 @@
-#include"interp.h"
+#include "interp.h"
+#define TRACE_ERR() fprintf(stderr, "[%s:%d:%s] ", __FILE__, __LINE__, __func__)
 
-#pragma region
-#define CAR(x) ((Object)x).ptr[0]
-#define CDR(x) ((Object)x).ptr[1]
-#define CAAR(x) CAR(CAR(x))
-#define CAAAR(x) CAR(CAR(CAR(x)))
-#define CAAAAR(x) CAR(CAR(CAR(CAR(x))))
-#define CDAAAR(x) CDR(CAR(CAR(CAR(x))))
-#define CDAAR(x) CDR(CAR(CAR(x)))
-#define CADAAR(x) CAR(CDR(CAR(CAR(x))))
-#define CDDAAR(x) CDR(CDR(CAR(CAR(x))))
-#define CDAR(x) CDR(CAR(x))
-#define CADAR(x) CAR(CDR(CAR(x)))
-#define CAADAR(x) CAR(CAR(CDR(CAR(x))))
-#define CDADAR(x) CDR(CAR(CDR(CAR(x))))
-#define CDDAR(x) CDR(CDR(CAR(x)))
-#define CADDAR(x) CAR(CDR(CDR(CAR(x))))
-#define CDDDAR(x) CDR(CDR(CDR(CAR(x))))
-#define CADR(x) CAR(CDR(x))
-#define CAADR(x) CAR(CAR(CDR(x)))
-#define CAAADR(x) CAR(CAR(CAR(CDR(x))))
-#define CDAADR(x) CDR(CAR(CAR(CDR(x))))
-#define CDADR(x) CDR(CAR(CDR(x)))
-#define CADADR(x) CAR(CDR(CAR(CDR(x))))
-#define CDDADR(x) CDR(CDR(CAR(CDR(x))))
-#define CDDR(x) CDR(CDR(x))
-#define CADDR(x) CAR(CDR(CDR(x)))
-#define CAADDR(x) CAR(CAR(CDR(CDR(x))))
-#define CDADDR(x) CDR(CAR(CDR(CDR(x))))
-#define CDDDR(x) CDR(CDR(CDR(x)))
-#define CADDDR(x) CAR(CDR(CDR(CDR(x))))
-#define CDDDDR(x) CDR(CDR(CDR(CDR(x))))
-#pragma endregion
+intptr_t MAX_HEAP_SIZE = 32 << 20;
+intptr_t HEAP_SIZE = 1 << 20;
 
-#define check_list_one(x) ((x).tag == PAIR_TAG)
-#define check_list_two(x) check_list_one(x) && (CDR(x).tag == PAIR_TAG)
-#define check_list_three(x) check_list_two(x) && (CDDR(x).tag == PAIR_TAG)
-#define _make_nil() (Object){.tag=NIL_TAG};
-
-inline static uintptr_t align_to_multiple(uintptr_t alignment, uintptr_t offset);
-
-void load_n_run(int argc, char *argv[]);
-void initialize(int argc, char *argv[]);
-void end_cont();
-void apply_cont();
-
-void _s_write(FILE *fptr, Object obj);
-Object make_num(int n);
-Object make_pair();
-Object alloc_pair();
-Object make_vec(int n);
-Object alloc_vec(int n);
-Object copy_str(const char *s);
-Object alloc_str(int sz);
-Object make_fn(void (*fn_ptr)());
-Object make_char(char c);
-Object make_bool(bool b);
-Object make_token(char tk);
-Object make_fptr(const char *s, const char *mode);
-void _strncpy(char *dest, const char *source, int len);
-
-void print_all_token_cont();
-void print_all_token();
-
-void s_load_cont();
-void s_read_file_cont_1();
-void s_read_file_cont();
-void s_read_file();
-
-void parse();
-void peek_token_cont();
-void peek_token();
-char peek_char(FILE *fptr);
-void next_token();
-int lex_num(FILE *fptr, int base);
-void lex_comment_block(FILE *fptr);
-bool is_num_char(char c);
-bool is_id_char(char c);
-void parse_cont();
-void parse_abrv_cont();
-void parse_list();
-void parse_dotted_cont();
-void parse_list_cont();
-void parse_list_cont_1();
-void parse_list_cont_2();
-
-Object add_symbol(const char *s);
-bool eq(Object x, Object y);
-void append_mut(Object xs, Object ys);
-Object assq(Object x, Object xs);
-
-void s_load();
-void s_eval();
-void s_apply();
-
-void s_exit();
-void s_cmd_ln();
-void s_getpid();
-void s_file_exists_pred();
-void s_system();
-void s_file_pred();
-void s_curr_stdout();
-void s_curr_stderr();
-void s_fopen();
-void s_fclose();
-void s_eof_obj_pred();
-void s_read();
-void s_write();
-void s_newline();
-void s_read_char();
-void s_unread_char();
-void s_write_char();
-void s_writeln();
-
-void s_null_pred();
-void s_proc_pred();
-void s_boolean_pred();
-
-void s_char_pred();
-void s_int_to_char();
-void s_char_to_int();
-
-void s_integer_pred();
-void s_eq();
-void s_add();
-void s_sub();
-void s_mul();
-void s_div();
-void s_mod();
-void s_le();
-void s_lt();
-void s_eqn();
-void s_ge();
-void s_gt();
-void s_ash();
-void s_band();
-void s_ior();
-
-void s_pair_pred();
-void s_cons();
-void s_car();
-void s_cdr();
-void s_set_car();
-void s_set_cdr();
-
-void s_sym_pred();
-void s_sym_to_str();
-void s_str_to_sym();
-
-void s_str_pred();
-void s_make_str();
-void s_str_len();
-void s_str_ref();
-void s_str_set();
-
-void s_vec_pred();
-void s_make_vec();
-void s_vec_len();
-void s_vec_ref();
-void s_vec_set();
-
-void eval();
-void if_cont();
-void seq_cont();
-void assign_cont();
-void app_cont();
-void apply_macro_clos();
-void app_macro_clos_cont_1();
-void apply_clos();
-
-void gc_flip(int sz);
-void collect_scan_ptr();
-
-Object apply_env(Object x, Object env);
-
-struct {
-    bool is_deleted;
-    Object obj;
-} GC_CELLS[HEAP_SIZE];
-
-Object VAL = _make_nil();
-Object EXP = _make_nil();
-Object CONT = _make_nil();
-Object ENV = _make_nil();
-Object PROC = _make_nil();
-Object GLOBALS = _make_nil();
-Object ARGV = _make_nil();
-Object NIL = _make_nil();
-Object TOK = _make_nil();
-Object SYMBOLS = _make_nil();
-Object IF = _make_nil();
-Object LAMBDA = _make_nil();
-Object BEGIN = _make_nil();
-Object SET = _make_nil();
-Object DEFMACRO = _make_nil();
-Object QUOTE = _make_nil();
-Object QUASIQUOTE = _make_nil();
-Object UNQUOTE = _make_nil();
-Object UNQUOTE_SPLICING = _make_nil();
-
+void (*NEXT)();
+uint32_t TOKEN_BUF[512];
 Object *free_ptr, *scan_ptr;
 Object *fromspace_start, *fromspace_end, *tospace_start, *tospace_end;
-char TOKEN_BUF[512];
-void (*NEXT)();
+static bool *gc_markers;
+intptr_t SYMBOLS_CAPS = 1024;
+intptr_t SYMBOLS_SIZE;
 
-// implementation start
-inline static uintptr_t align_to_multiple(uintptr_t alignment, uintptr_t offset){
+Object EXP;
+Object PROC;
+Object VAL;
+Object CONT;
+Object ENV;
+Object SYMBOLS;
+Object TOK;
+Object QUOTE;
+Object UNQUOTE_SPLICING;
+Object UNQUOTE;
+Object QUASIQUOTE;
+Object BEGIN;
+Object LAMBDA;
+Object IF;
+Object SET_BANG;
+Object DEFINE;
+Object DEFMACRO;
+Object *CONST_TABLE[] = {&EXP, &PROC, &VAL, &CONT, &ENV, &SYMBOLS, &TOK, &QUOTE, &UNQUOTE_SPLICING, &UNQUOTE, &QUASIQUOTE, &BEGIN, &LAMBDA, &IF, &SET_BANG, &DEFINE, &DEFMACRO,};
+
+static inline intptr_t align_to_multiple(intptr_t alignment, intptr_t offset){
     return (offset + (alignment - 1)) & -alignment;
 }
 
-void load_n_run(int argc, char *argv[]){
-    assert(argc >= 2);
-    initialize(argc, argv);
-    VAL = copy_str(argv[1]);
-    EXP = make_pair();
-    CAR(EXP) = VAL;
-    VAL = EXP;
-    NEXT = s_load;
+#define make_nil() ((Object){.tag = NIL_TAG})
+#define make_void() ((Object){.tag = VOID_TAG})
+#define make_num(n) ((Object){.tag = FX_TAG, .fx = (n)})
+#define make_char(c) ((Object){.tag = CHAR_TAG, .ch = (c)})
+#define make_cont(f) ((Object){.tag = CONT_TAG, .cont = (f)})
+#define make_bool(_b) ((Object){.tag = BOOL_TAG, .b = _b ? true : false})
 
-    for(;;){
-        NEXT();
-    }
+Object make_pair(Object car, Object cdr) {
+    assert(fromspace_end - free_ptr > 2);
+    Object v = {.tag = PAIR_TAG, .len = 2, .ptr = free_ptr};
+    CAR(v) = car;
+    CDR(v) = cdr;
+    free_ptr = free_ptr + 2;
+    return v;
 }
 
-void _s_write(FILE *fptr, Object obj){
-    switch (obj.tag)
-    {
-    case FX_TAG:{
-        fprintf(fptr, "%d", obj.fx);
-        break;
-    }
-    case BOOL_TAG:{
-        if(obj.b){
-            fprintf(fptr, "#t");
-        }
-        else{
-            fprintf(fptr, "#f");
-        }
-        break;
-    }
-    case CHAR_TAG:{
-        fprintf(fptr, "#\\%c", obj.ch);
-        break;
-    }
-    case NIL_TAG:{
-        fprintf(fptr, "()");
-        break;
-    }
-    case PAIR_TAG:{
-        fprintf(fptr, "(");
-        _s_write(fptr, obj.ptr[0]);
-        obj = obj.ptr[1];
-        while(obj.tag == PAIR_TAG){
-            fprintf(fptr, " ");
-            _s_write(fptr, obj.ptr[0]);
-            obj = obj.ptr[1];
-        }
-        if(obj.tag == NIL_TAG){
-            fprintf(fptr, ")");
-        }
-        else{
-            fprintf(fptr, " . ");
-            _s_write(fptr, obj);
-            fprintf(fptr, ")");
-        }
-        break;
-    }
-    case STR_TAG:{
-        fprintf(fptr, "\"");
-        for(int i = 0; i < obj.len; ++i){
-            if(obj.s[i] == '\n'){
-                fprintf(fptr, "\\n");
-            }
-            else if(obj.s[i] == '\t'){
-                fprintf(fptr, "\\t");
-            }
-            else if(obj.s[i] == '\\'){
-                fprintf(fptr, "\\\\");
-            }
-            else if(obj.s[i] == '"'){
-                fprintf(fptr, "\\\"");
-            }
-            else if(obj.s[i] == '\0'){
-                fprintf(fptr, "\\0");
-            }
-            else{
-                fprintf(fptr, "%c", obj.s[i]);
-            }
-        }
-        fprintf(fptr, "\"");
-        break;
-    }
-    case SYM_TAG:{
-        fprintf(fptr, "%s", obj.s);
-        break;
-    }
-    case VEC_TAG:{
-        fprintf(fptr, "#(");
-        for(int i = 0; i < obj.len; ++i){
-            _s_write(fptr, obj.ptr[i]);
-            if(i != obj.len - 1){
-                fprintf(fptr, " ");
-            }
-        }
-        fprintf(fptr, ")");
-        break;
-    }
-    case TOK_TAG:{
-        fprintf(fptr, "<TOKEN %c>", obj.tk);
-        break;
-    }
-    case FN_TAG:{
-        fprintf(fptr, "<BUILT-IN-FN %p>", obj.cont);
-        break;
-    }
-    case FILE_TAG:{
-        fprintf(fptr, "<FILE %p>", obj.fp);
-        break;
-    }
-    case EOF_TAG:{
-        fprintf(fptr, "!eof");
-        break;
-    }
-    default:
-        fprintf(stderr, "unknown tag: %d\n", obj.tag);
-        assert(false);
-        break;
-    }
+Object alloc_pair() {
+    gc_flip(2 * sizeof(Object));
+    return make_pair(make_nil(), make_nil());
 }
 
-Object make_num(int n){
-    return (Object){.tag = FX_TAG, .fx = n};
+Object make_vec(int32_t len, Object k) {
+    assert(fromspace_end - free_ptr > len);
+    Object v = {.tag = VEC_TAG, .len = len, .ptr = free_ptr};
+    for(int i = 0; i < len; ++i) {
+        v.ptr[i] = k;
+    }
+    free_ptr = free_ptr + len;
+    return v;
 }
 
-Object make_fn(void (*fn_ptr)()){
-    return (Object){.tag=FN_TAG, .cont = fn_ptr};
+Object make_clos(void (*cont)(), int32_t len) {
+    assert(len >= 1);
+    Object v = make_vec(len, make_num(0));
+    v.tag = CLOS_TAG;
+    v.ptr[0] = make_cont(cont);
+    return v;
 }
 
-Object make_char(char c){
-    return (Object){.tag=CHAR_TAG, .ch = c};
+Object alloc_clos(void (*cont)(), int32_t len) {
+    gc_flip(len * sizeof(Object));
+    return make_clos(cont, len);
 }
 
-Object make_bool(bool b){
-    return (Object){.tag=BOOL_TAG, .b = b};
-}
-
-Object make_token(char tk){
-    return (Object){.tag=TOK_TAG, .tk = tk};
-}
-
-Object make_pair(){
-    gc_flip(3);
-    return alloc_pair();
-}
-
-Object alloc_pair(){
-    Object tmp = {.tag = PAIR_TAG, .len = 2, .ptr = free_ptr + 1};
+Object make_sym(Object str, Object hash) {
+    assert(fromspace_end - free_ptr > 3);
+    assert(str.tag == STR_TAG && hash.tag == FX_TAG);
+    Object v = {.tag = SYM_TAG, .len = 3, .ptr = free_ptr};
+    free_ptr[0] = (Object){.tag = UNBOUND_TAG};
+    free_ptr[1] = hash;
+    free_ptr[2] = str;
     free_ptr = free_ptr + 3;
-    tmp.ptr[0] = NIL;
-    tmp.ptr[1] = NIL;
-    tmp.ptr[-1] = tmp;
-    return tmp;
+    return v;
 }
 
-Object make_vec(int n){
-    gc_flip(1 + n);
-    return alloc_vec(n);
+Object sym_name(Object sym) {
+    assert(sym.tag == SYM_TAG && sym.ptr[2].tag == STR_TAG);
+    return sym.ptr[2];
 }
 
-Object alloc_vec(int n){
-    Object tmp = {.tag = VEC_TAG, .len = n, .ptr = free_ptr + 1};
-    free_ptr = free_ptr + n + 1;
-    tmp.ptr[-1] = tmp;
-    return tmp;
+Object sym_hash(Object sym) {
+    assert(sym.tag == SYM_TAG && sym.ptr[1].tag == FX_TAG);
+    return sym.ptr[1];
 }
 
-Object make_str(char c, int n){
-    int sz = 1 + align_to_multiple(sizeof(Object), n + 1) / sizeof(Object);
-    gc_flip(sz);
-    Object tmp = alloc_str(n);
-    for(int i = 0; i < n; ++i){
-        tmp.s[i] = c;
+Object sym_val(Object sym, Object val) {
+    assert(sym.tag == SYM_TAG);
+    if(val.tag != UNBOUND_TAG) {
+        sym.ptr[0] = val;
     }
-    return tmp;
+    return sym.ptr[0];
 }
 
-Object copy_str(const char *s){
-    int n = strlen(s);
-    int sz = 1 + align_to_multiple(sizeof(Object),n + 1) / sizeof(Object);
-    gc_flip(sz);
-    Object tmp = alloc_str(n);
-    strcpy(tmp.s, s);
-    return tmp;
-}
-
-Object alloc_str(int len){
-    Object tmp = {.tag = STR_TAG, .len = len, .s = (char*)(free_ptr+1)};
-    tmp.s[tmp.len] = '\0';
-    *free_ptr = tmp;
-    int offset = align_to_multiple(sizeof(Object), tmp.len + 1) / sizeof(Object);
-    free_ptr = free_ptr + 1 + offset;
-    return tmp;
-}
-
-bool eq(Object x, Object y){
-    if(x.tag != y.tag){
-        return false;
-    }
-    else if(x.tag == NIL_TAG){
-        return true;
-    }
-    else if(x.tag == FX_TAG){
-        return x.fx == y.fx;
-    }
-    else if(x.tag == CHAR_TAG){
-        return x.ch == y.ch;
-    }
-    else if(x.tag == BOOL_TAG){
-        return x.b == y.b;
-    }
-    else if((x.tag == SYM_TAG) || (x.tag == STR_TAG)){
-        return x.s == y.s;
-    }
-    else if(x.tag == VEC_TAG || x.tag == PAIR_TAG){
-        return x.ptr == y.ptr;
-    }
-    else if(x.tag == FILE_TAG){
-        return x.fp == y.fp;
-    }
-    else{
-        fprintf(stderr, "unknown tag: %d\n", x.tag);
-        assert(false);
-    }
-}
-
-Object add_symbol(const char *s){
-    Object tmp = SYMBOLS;
-    while(tmp.tag == PAIR_TAG){
-        if(strcmp(CAR(tmp).s, s) == 0){
-            VAL = CAR(tmp);
-            return VAL;
+Object make_str(const uint32_t *str, int32_t len) {
+    assert((fromspace_end - free_ptr) * sizeof(Object) > len * sizeof(uint32_t));
+    Object v = {.tag = STR_TAG, .len = len, .str = (uint32_t*)free_ptr};
+    free_ptr = (Object*)align_to_multiple(sizeof(Object), (intptr_t)(v.str + len));
+    if(str != NULL) {
+        for(int i = 0; i < len; ++i) {
+            v.str[i] = str[i];
         }
-        tmp = CDR(tmp);
     }
-    PROC = make_pair();
-    CDR(PROC) = SYMBOLS;
-    SYMBOLS = PROC;
-    VAL = copy_str(s);
-    VAL.tag = SYM_TAG;
-    CAR(SYMBOLS) = VAL;
-    return VAL;
+    return v;
 }
 
-void append_mut(Object xs, Object ys){
-    assert(xs.tag == PAIR_TAG);
-    while(CDR(xs).tag == PAIR_TAG){
-        xs = CDR(xs);
-    }
-    assert(xs.tag == PAIR_TAG);
-    CDR(xs) = ys;
-}
-
-Object assq(Object x, Object xs){
-    while (xs.tag == PAIR_TAG){
-        if(eq(CAAR(xs), x)){
-            return CAR(xs);
+Object make_bytevec(const uint8_t *s, int32_t len) {
+    assert((fromspace_end - free_ptr) * sizeof(Object) > len);
+    Object v = {.tag = BYTEVEC_TAG, .len = len, .bv = (uint8_t*)free_ptr};
+    free_ptr = (Object*)align_to_multiple(sizeof(Object), (intptr_t)(v.bv + len));
+    if(s != NULL) {
+        for(int i = 0; i < len; ++i) {
+            v.bv[i] = s[i];
         }
-        xs = CDR(xs);
     }
-    return make_bool(false);
+    return v;
 }
 
-void add_prim(const char *s, void (*pr)(void)){
-    PROC = make_pair();
-    CDR(PROC) = GLOBALS;
-    GLOBALS = PROC;
-    PROC = make_pair();
-    CAR(GLOBALS) = PROC;
-    PROC = add_symbol(s);
-    CAAR(GLOBALS) = PROC;
-    CDAR(GLOBALS) = make_fn(pr);
-}
-
-void apply_cont(){
-    assert(CONT.tag == VEC_TAG);
-    assert(CONT.len >= 1);
-    assert(CONT.ptr[0].tag == FN_TAG);
-    NEXT = CONT.ptr[0].cont;
-}
-
-void end_cont(){
-    exit(0);
-}
-
-void initialize(int argc, char *argv[]){
-    assert(HEAP_SIZE % 2 == 0);
-    free_ptr = calloc(HEAP_SIZE * 2, sizeof(Object));
-    fromspace_start = free_ptr;
-    fromspace_end = fromspace_start + HEAP_SIZE;
-    tospace_start = fromspace_end;
-    tospace_end = tospace_start + HEAP_SIZE;
-
-    // initialize argv
-    for(int i = argc-1; i > 0; --i){
-        PROC = make_pair();
-        VAL = copy_str(argv[i]);
-        CDR(PROC) = ARGV;
-        CAR(PROC) = VAL;
-        ARGV = PROC;
+/* djb2: hash = hash * 33 + c, init = 5381 */
+intptr_t utf32_hash(const uint32_t *buf, int32_t len) {
+    intptr_t hash = 5381;
+    for(int i = 0; i < len; ++i) {
+        hash = ((hash << 5) + hash) + buf[i];
     }
-
-    CONT = make_vec(1);
-    CONT.ptr[0] = make_fn(end_cont);
-
-    IF = add_symbol("if");
-    LAMBDA = add_symbol("lambda");
-    BEGIN = add_symbol("begin");
-    SET = add_symbol("set!");
-    DEFMACRO = add_symbol("define-macro");
-    QUOTE = add_symbol("quote");
-    QUASIQUOTE = add_symbol("quasiquote");
-    UNQUOTE = add_symbol("unquote");
-    UNQUOTE_SPLICING = add_symbol("unquote-splicing");
-    
-    add_prim("apply", s_apply);
-
-    add_prim("boolean?",s_boolean_pred);
-    add_prim("char?",s_char_pred);
-    add_prim("integer->char",s_int_to_char);
-    add_prim("char->integer",s_char_to_int);
-    add_prim("integer?",s_integer_pred);
-
-    add_prim("eq?", s_eq);
-    add_prim("+", s_add);
-    add_prim("-",s_sub);
-    add_prim("*", s_mul);
-    add_prim("div", s_div);
-    add_prim("mod", s_mod);
-    add_prim("<",s_lt);
-    add_prim("<=",s_le);
-    add_prim("=",s_eqn);
-    add_prim(">=",s_ge);
-    add_prim(">",s_gt);
-    add_prim("ash", s_ash);
-    add_prim("bitwise-and", s_band);
-    add_prim("bitwise-ior", s_ior);
-    add_prim("writeln", s_writeln);
-    add_prim("write", s_write);
-    add_prim("read-char", s_read_char);
-    add_prim("unread-char", s_unread_char);
-    add_prim("write-char", s_write_char);
-    add_prim("newline", s_newline);
-    add_prim("read", s_read);
-    add_prim("eof-object?", s_eof_obj_pred);
-
-    add_prim("port?", s_file_pred);
-    add_prim("current-output-port", s_curr_stdout);
-    add_prim("current-error-port", s_curr_stderr);
-    add_prim("fopen", s_fopen);
-    add_prim("fclose", s_fclose);
-    add_prim("exit", s_exit);
-    add_prim("command-line", s_cmd_ln);
-    add_prim("get-process-id", s_getpid);
-    add_prim("file-exists?", s_file_exists_pred);
-    add_prim("system", s_system);
-    add_prim("load", s_load);
-    add_prim("eval", s_eval);
-    
-    add_prim("procedure?", s_proc_pred);
-    add_prim("null?", s_null_pred);
-    add_prim("pair?", s_pair_pred);
-    add_prim("cons", s_cons);
-    add_prim("car", s_car);
-    add_prim("cdr", s_cdr);
-    add_prim("set-car!", s_set_car);
-    add_prim("set-cdr!", s_set_cdr);
-
-    add_prim("symbol?", s_sym_pred);
-    add_prim("symbol->string", s_sym_to_str);
-    add_prim("string->symbol", s_str_to_sym);
-    add_prim("string?", s_str_pred);
-    add_prim("make-string", s_make_str);
-    add_prim("string-length", s_str_len);
-    add_prim("string-set!", s_str_set);
-    add_prim("string-ref", s_str_ref);
-
-    add_prim("vector?", s_vec_pred);
-    add_prim("make-vector", s_make_vec);
-    add_prim("vector-length", s_vec_len);
-    add_prim("vector-ref", s_vec_ref);
-    add_prim("vector-set!", s_vec_set);
+    return llabs(hash);
 }
 
-// #(_ car cont)
-void s_read_file_cont_1(){
-    PROC = make_pair();
-    CAR(PROC) = CONT.ptr[1];
-    CDR(PROC) = VAL;
-    VAL = PROC;
-    CONT = CONT.ptr[CONT.len-1];
-    NEXT = apply_cont;
-}
-
-// #(_ fp cont)
-void s_read_file_cont(){
-    if(VAL.tag == EOF_TAG){
-        CONT = CONT.ptr[CONT.len-1];
-        VAL = NIL;
-        NEXT = apply_cont;
+bool utf32_cmp(const uint32_t *s0, const uint32_t *s1, int32_t len) {
+    for(int i = 0; i < len; ++i) {
+        if(s0[i] != s1[i]) {
+            return false;
+        }
     }
-    else{
-        CONT.ptr[0] = make_fn(s_read_file_cont_1);
-        PROC = CONT.ptr[1];
-        CONT.ptr[1] = VAL;
-        VAL = PROC;
-        NEXT = s_read_file;
+    return true;
+}
+
+Object add_symbol(const uint32_t *buf, int32_t len) {
+    intptr_t hash = utf32_hash(buf, len);
+    intptr_t idx = hash % SYMBOLS.len;
+    Object bucket = SYMBOLS.ptr[idx];
+    while(bucket.tag == PAIR_TAG) {
+        assert(CAR(bucket).tag == SYM_TAG);
+        Object sym = CAR(bucket);
+        Object str = sym_name(sym);
+        if(str.len == len && utf32_cmp(str.str, buf, len)) {
+            return sym;
+        }
+        bucket = CDR(bucket);
+        assert(bucket.tag == NIL_TAG || bucket.tag == PAIR_TAG);
+    }
+    Object sym = make_sym(make_str(buf, len), make_num(hash));
+    SYMBOLS.ptr[idx] = make_pair(sym, SYMBOLS.ptr[idx]);
+    SYMBOLS_SIZE++;
+    return sym;
+}
+
+void resize_symbol_table() {
+    if(SYMBOLS_SIZE < SYMBOLS_CAPS) {
+        return;
+    }
+    Object new_table = make_vec(SYMBOLS_CAPS * 2, make_nil());
+    intptr_t symbol_size = 0;
+    for(int i = 0; i < SYMBOLS.len; ++i) {
+        Object bucket = SYMBOLS.ptr[i];
+        while(bucket.tag == PAIR_TAG) {
+            assert(CAR(bucket).tag == SYM_TAG);
+            Object sym = CAR(bucket);
+            uintptr_t hash = sym_hash(sym).fx;
+            uintptr_t idx = hash % new_table.len;
+            new_table.ptr[idx] = make_pair(sym, new_table.ptr[idx]);
+            bucket = CDR(bucket);
+            symbol_size++;
+            assert(bucket.tag == NIL_TAG || bucket.tag == PAIR_TAG);
+        }
+    }
+    SYMBOLS = new_table;
+    SYMBOLS_SIZE = symbol_size;
+    SYMBOLS_CAPS = new_table.len;
+}
+
+Object add_symbol_cstr(const char *str) {
+    int i;
+    for(i = 0; str[i] != '\0'; ++i) {
+        TOKEN_BUF[i] = (uint32_t)str[i];
+    }
+    assert(i < sizeof(TOKEN_BUF)/sizeof(*TOKEN_BUF));
+    TOKEN_BUF[i] = '\0';
+    return add_symbol(TOKEN_BUF, i);
+}
+
+Object add_prim(const char *str, void (*prim)()) {
+    return sym_val(add_symbol_cstr(str), alloc_clos(prim, 1));
+}
+
+// lexer
+int fpeekc(FILE *fptr) {
+    int c = fgetc(fptr);
+    if(c != EOF){
+        ungetc(c, fptr);
+        return c;
+    }
+    else {
+        return EOF;
     }
 }
 
-void s_read_file(){
-    assert(VAL.tag == FILE_TAG);
-    PROC = make_vec(3);
-    PROC.ptr[0] = make_fn(s_read_file_cont);
-    PROC.ptr[1] = VAL;
-    PROC.ptr[PROC.len-1] = CONT;
-    CONT = PROC;
-    NEXT = parse;
-}
-
-void s_load_cont(){
-    EXP = make_pair();
-    CONT = CONT.ptr[CONT.len - 1];
-    CAR(EXP) = BEGIN;
-    CDR(EXP) = VAL;
-    ENV = GLOBALS;
-    NEXT = eval;
-}
-
-void s_load(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    VAL = make_fptr(CAR(VAL).s, "r");
-    PROC = make_vec(2);
-    PROC.ptr[0] = make_fn(s_load_cont);
-    PROC.ptr[PROC.len-1] = CONT;
-    CONT = PROC;
-    NEXT = s_read_file;
-}
-
-Object make_fptr(const char *s, const char *mode){
-    FILE *fptr = fopen(s, mode);
-    if(fptr == NULL){
-        fprintf(stderr, "error file: %s\n", s);
-        assert(fptr !=  NULL);
-    }
-    return (Object){.tag = FILE_TAG, .fp = fptr};
-}
-
-void _strncpy(char *dest, const char *source, int len){
-    for(len = len - 1; len >= 0; --len){
-        dest[len] = source[len];
-    }
-}
-
-void print_all_token_cont(){
-    if(VAL.tag == TOK_TAG && VAL.tk == EOF){
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = apply_cont;
-    }
-    else{
-        _s_write(stdout, VAL);
-        putc('\n', stdout);
-        VAL = CONT.ptr[1];
-        NEXT = next_token;
-    }
-}
-
-void print_all_token(){
-    assert(VAL.tag == FILE_TAG);
-    PROC = make_vec(3);
-    PROC.ptr[0] = make_fn(print_all_token);
-    PROC.ptr[1] = VAL;
-    PROC.ptr[PROC.len-1] = CONT;
-    CONT = PROC;
-    NEXT = next_token;
-}
-
-bool is_id_char(char c){
+bool is_id_char(char c) {
     const char extended_set[] = "!$%&*+-./:<=>?@^_~";
     if((('a' <= c) && (c <= 'z'))
        || (('A' <= c) && (c <= 'Z'))
@@ -704,12 +238,11 @@ bool is_num_char(char c){
     return ('0' <= c && c <= '9') || ('A' <= c && c <= 'F') || ('a' <= c && c <= 'f');
 }
 
-int lex_num(FILE *fptr, int base){
+intptr_t lex_num(FILE *fptr, int base) {
     assert(base == 2 || base == 8 || base == 10 || base == 16);
     int x = 0;
     char c = getc(fptr);
-    while(is_num_char(c)){
-        x = x * base;
+    while(is_num_char(c)) {
         if('0' <= c && c <= '9'){
             c = c - '0';
         }
@@ -719,1242 +252,1535 @@ int lex_num(FILE *fptr, int base){
         else if ('a' <= c && c <= 'f'){
             c = c - 'a' + 10;
         }
-        x = x + c;
+        x = x * base + c;
         c = getc(fptr);
     }
     ungetc(c, fptr);
     return x;
-
 }
 
-void lex_comment_block(FILE *fptr){
-    while(true){
-        char c = getc(fptr);
-        assert(c != EOF);
-        if(c == '|' && peek_char(fptr) == '#'){
-            getc(fptr);
-            return;
+Object next_token(FILE *fptr) {
+    if(TOK.tag != NIL_TAG) {
+        Object t = TOK;
+        TOK = make_nil();
+        return t;
+    }
+    for(;;) {
+        int c = getc(fptr);
+        if(c == EOF) {
+            return (Object){.tag = EOF_TAG};
         }
-        else if(c == '#' && peek_char(fptr) == '|'){
-            getc(fptr);
-            lex_comment_block(fptr);
-            return;
-        }
-    }
-}
-
-// #(_ cont)
-void peek_token_cont(){
-    TOK = VAL;
-    CONT = CONT.ptr[CONT.len-1];
-    NEXT = apply_cont;
-}
-
-// VAL = fptr
-void peek_token(){
-    assert(VAL.tag == FILE_TAG);
-    if(TOK.tag == NIL_TAG){
-        PROC = make_vec(2);
-        PROC.ptr[0] = make_fn(peek_token_cont);
-        PROC.ptr[1] = CONT;
-        CONT = PROC;
-        NEXT = next_token;
-        return;
-    }
-    else{
-        VAL = TOK;
-        NEXT = apply_cont;
-        return;
-    }
-}
-
-char peek_char(FILE *fptr){
-    char ch = getc(fptr);
-    ungetc(ch, fptr);
-    return ch;
-}
-
-// VAL = fptr
-void next_token(){
-    if(TOK.tag != NIL_TAG){
-        VAL = TOK;
-        TOK = NIL;
-        NEXT = apply_cont;
-        return;
-    }
-    assert(VAL.tag == FILE_TAG);
-    FILE* fptr = VAL.fp;
-    int c = getc(fptr); 
-    if(c == EOF){
-        VAL = (Object){.tag=EOF_TAG};
-        NEXT = apply_cont;
-    }
-    else if(c == ' ' || c == '\n' || c == '\t'){
-        return;
-    }
-    else if(c == ';'){
-        while(c != EOF && c != '\n'){
-            c = getc(fptr);
-        }
-    }
-    else if(c == '(' || c == '['){
-        VAL = make_token('(');
-        NEXT = apply_cont;
-    }
-    else if(c == ')' || c == ']'){
-        VAL = make_token(')');
-        NEXT = apply_cont;
-    }
-    else if(c == '.' || c == '\'' || c == '`'){
-        VAL = make_token(c);
-        NEXT = apply_cont;
-    }
-    else if(c == ',' && peek_char(fptr) == '@'){
-        getc(fptr);
-        VAL = make_token('@');
-        NEXT = apply_cont;
-    }
-    else if(c == ','){
-        VAL = make_token(',');
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == 't'){
-        getc(fptr);
-        VAL = make_bool(true);
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == 'f'){
-        getc(fptr);
-        VAL = make_bool(false);
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == '('){
-        getc(fptr);
-        VAL = make_token(VEC_TAG);
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == '\\'){
-        getc(fptr);
-        c = getc(fptr);
-        VAL = make_char(c);
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == 'b'){
-        getc(fptr);
-        VAL = make_num(lex_num(fptr, 2));
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == 'o'){
-        getc(fptr);
-        VAL = make_num(lex_num(fptr, 8));
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == 'x'){
-        getc(fptr);
-        VAL = make_num(lex_num(fptr, 16));
-        NEXT = apply_cont;
-    }
-    else if(c == '#' && peek_char(fptr) == '|'){
-        getc(fptr);
-        lex_comment_block(fptr);
-    }
-    else if(c == '-' && '0' <= peek_char(fptr) && peek_char(fptr) <= '9'){
-        VAL = make_num(-lex_num(fptr, 10));
-        NEXT = apply_cont;
-    }
-    else if('0' <= c && c <= '9'){
-        ungetc(c, fptr);
-        VAL = make_num(lex_num(fptr, 10));
-        NEXT = apply_cont;
-    }
-    else if(c == '"'){
-        int i = 0;
-        c = getc(fptr);
-        while(c != '"'){
-            if(c == '\\'){
+        else if(c == ';') {
+            while(c != EOF && c != '\n') {
                 c = getc(fptr);
-                if(c == 'n'){
-                    c = '\n';
-                }
-                else if(c == 't'){
-                    c = '\t';
-                }
-                else if(c == '\\'){
-                    c = '\\';
-                }
-                else if(c == '"'){
-                    c = '"';
-                }
-                else{
-                    assert(false);
-                }
             }
+        }
+        else if(c == ' ' || c == '\n' || c == '\t') {
+            while(c == ' ' || c == '\n' || c == '\t') {
+                c = getc(fptr);
+            }
+            ungetc(c, fptr);
+        }
+        else if(c == '\'' || c == '`' || c == '.') {
+            return (Object){.tag = TOK_TAG, .tk = c};
+        }
+        else if(c == '(' || c == '[') {
+            return (Object){.tag = TOK_TAG, .tk = '('};
+        }
+        else if(c == ')' || c == ']') {
+            return (Object){.tag = TOK_TAG, .tk = ')'};
+        }
+        else if(c == ',' && fpeekc(fptr) == '@') {
+            getc(fptr);
+            return (Object){.tag = TOK_TAG, .tk = '@'};
+        }
+        else if(c == ',') {
+            return (Object){.tag = TOK_TAG, .tk = c};
+        }
+        else if(c == '"') {
+            int i = 0;
+            c = getc(fptr);
+            while(c != '"'){
+                if(c == '\\'){
+                    c = getc(fptr);
+                    if(c == 'n'){
+                        c = '\n';
+                    }
+                    else if(c == 't'){
+                        c = '\t';
+                    }
+                    else if(c == '\\'){
+                        c = '\\';
+                    }
+                    else if(c == '"'){
+                        c = '"';
+                    }
+                }
+                TOKEN_BUF[i++] = c;
+                c = getc(fptr);
+            }
+            TOKEN_BUF[i] = '\0';
+            assert(i < sizeof(TOKEN_BUF)/sizeof(*TOKEN_BUF));
+            return make_str(TOKEN_BUF, i);
+        }
+        else if(c == '#' && fpeekc(fptr) == '\\') {
+            getc(fptr);
+            return (Object){.tag = CHAR_TAG, .ch = getc(fptr)};
+        }
+        else if(c == '#' && fpeekc(fptr) == 'x') {
+            getc(fptr);
+            return make_num(lex_num(fptr, 16));
+        }
+        else if(c == '#' && fpeekc(fptr) == 'b') {
+            getc(fptr);
+            return make_num(lex_num(fptr, 2));
+        }
+        else if(c == '#' && fpeekc(fptr) == 't') {
+            getc(fptr);
+            return (Object){.tag = BOOL_TAG, .b = true};
+        }
+        else if(c == '#' && fpeekc(fptr) == 'f') {
+            getc(fptr);
+            return (Object){.tag = BOOL_TAG, .b = false};
+        }
+        else if(c == '-' && '0' <= fpeekc(fptr) && fpeekc(fptr) <= '9') {
+            return make_num(-lex_num(fptr, 10));
+        }
+        else if('0' <= c && c <= '9') {
+            ungetc(c, fptr);
+            return make_num(lex_num(fptr, 10));
+        }
+        else if(is_id_char(c)) {
+            int i = 0;
             TOKEN_BUF[i++] = c;
             c = getc(fptr);
+            while(is_id_char(c)){
+                TOKEN_BUF[i++] = c;
+                c = getc(fptr);
+            }
+            TOKEN_BUF[i] = '\0';
+            assert(i < sizeof(TOKEN_BUF)/sizeof(*TOKEN_BUF));
+            ungetc(c, fptr);
+            return add_symbol(TOKEN_BUF, i);
         }
-        TOKEN_BUF[i] = '\0';
-        VAL = copy_str(TOKEN_BUF);
-        NEXT = apply_cont;
-    }
-    else if(is_id_char(c)){
-        int i = 0;
-        TOKEN_BUF[i++] = c;
-        c = getc(fptr);
-        while(is_id_char(c)){
-            TOKEN_BUF[i++] = c;
-            c = getc(fptr);
+        else {
+            TRACE_ERR();
+            fprintf(stderr, "unknown lexeme: %c %c\n", c, fpeekc(fptr));
+            abort();
         }
-        TOKEN_BUF[i] = '\0';
-        ungetc(c, fptr);
-        VAL = add_symbol(TOKEN_BUF);
-        NEXT = apply_cont;
-        return;
-    }
-    else{
-        fprintf(stderr, "unknown: %c\n", c);
-        assert(false);
     }
 }
 
-// #(_ _ cont)
-void parse_vector_cont(){
-    CONT = CONT.ptr[CONT.len-1];
-    int len = 0;
-    for(Object tmp = VAL; tmp.tag == PAIR_TAG; tmp = CDR(tmp)){
-        ++len;
+// reader
+Object peek_token(FILE *fptr) {
+    if(TOK.tag == NIL_TAG) {
+        TOK = next_token(fptr);
     }
-    PROC = VAL;
-    VAL = make_vec(len);
-    for(int i = 0; i < len; ++i){
-        VAL.ptr[i] = CAR(PROC);
-        PROC = CDR(PROC);
+    return TOK;
+}
+
+Object parse_list(FILE *fptr) {
+    Object tk = peek_token(fptr);
+    if(tk.tag == TOK_TAG && tk.tk == ')') {
+        next_token(fptr);
+        return make_nil();
     }
+    else if(tk.tag == TOK_TAG && tk.tk == '.') {
+        next_token(fptr);
+        Object v = parse(fptr);
+        next_token(fptr);
+        return v;
+    }
+    else {
+        Object car = parse(fptr);
+        Object cdr = parse_list(fptr);
+        return make_pair(car, cdr);
+    }
+}
+
+Object parse(FILE *fptr) {
+    Object tk = next_token(fptr);
+    if(tk.tag == STR_TAG || tk.tag == CHAR_TAG || tk.tag == FX_TAG || tk.tag == SYM_TAG
+        || tk.tag == EOF_TAG || tk.tag == BOOL_TAG) {
+        return tk;
+    }
+    else if(tk.tag == TOK_TAG && tk.tk == '\'') {
+        return make_pair(QUOTE, make_pair(parse(fptr), make_nil()));
+    }
+    else if(tk.tag == TOK_TAG && tk.tk == '@') {
+        return make_pair(UNQUOTE_SPLICING, make_pair(parse(fptr), make_nil()));
+    }
+    else if(tk.tag == TOK_TAG && tk.tk == ',') {
+        return make_pair(UNQUOTE, make_pair(parse(fptr), make_nil()));
+    }
+    else if(tk.tag == TOK_TAG && tk.tk == '`') {
+        return make_pair(QUASIQUOTE, make_pair(parse(fptr), make_nil()));
+    }
+    else if(tk.tag == TOK_TAG && tk.tk == '(') {
+        return parse_list(fptr);
+    }
+    else {
+        TRACE_ERR();
+        fprintf(stderr, "unknown token: %d\n", tk.tag);
+        abort();
+    }
+}
+
+Object parse_all(FILE *fptr) {
+    Object v = parse(fptr);
+    if(v.tag == EOF_TAG) {
+        return make_nil();
+    }
+    else {
+        return make_pair(v, parse_all(fptr));
+    }
+}
+
+// writer
+void write_obj(Object v, FILE *fptr) {
+    if(v.tag == FX_TAG) {
+        fprintf(fptr, "%"PRIdPTR, v.fx);
+    }
+    else if(v.tag == BOOL_TAG) {
+        fprintf(fptr, v.b ? "#t" : "#f");
+    }
+    else if(v.tag == CHAR_TAG) {
+        if(v.ch < 128) {
+        fprintf(fptr, "#\\%c", (char)v.ch);
+        }
+        else {
+            fprintf(fptr, "#\\x%x", v.ch);
+        }
+    }
+    else if(v.tag == NIL_TAG) {
+        fprintf(fptr, "()");
+    }
+    else if(v.tag == VOID_TAG) {
+        fprintf(fptr, "#<void>");
+    }
+    else if(v.tag == PAIR_TAG) {
+        Object car = v.ptr[0];
+        Object cdr = v.ptr[1];
+        
+        fprintf(fptr, "(");
+        write_obj(car, fptr);
+        
+        while(cdr.tag == PAIR_TAG) {
+            fprintf(fptr, " ");
+            v = cdr;
+            car = v.ptr[0];
+            cdr = v.ptr[1];
+            write_obj(car, fptr);
+        }
+        if(cdr.tag == NIL_TAG) {
+            fprintf(fptr, ")");
+        }
+        else {
+            fprintf(fptr, " . ");
+            write_obj(cdr, fptr);
+            fprintf(fptr, ")");
+        }
+    }
+    else if(v.tag == SYM_TAG) {
+        v = sym_name(v);
+        for(int i = 0; i < v.len; ++i)
+            fprintf(fptr, "%c", (char)v.str[i]);
+    }
+    else if(v.tag == STR_TAG) {
+        fprintf(fptr, "\"");
+        for(int i = 0; i < v.len; ++i)
+            fprintf(fptr, "%c", (char)v.str[i]);
+        fprintf(fptr, "\"");
+    }
+    else if(v.tag == BYTEVEC_TAG) {
+        fprintf(fptr, "#vu8(");
+        for(int i = 0; i < v.len; ++i) {
+            fprintf(fptr, "%d", v.bv[i]);
+            if(i != v.len - 1) {
+                fprintf(fptr, " ");
+            }
+        }
+        fprintf(fptr, ")");
+    }
+    else if(v.tag == VEC_TAG) {
+        fprintf(fptr, "#(");
+        for(int i = 0; i < v.len; ++i) {
+            write_obj(v.ptr[i], fptr);
+            if(i != v.len - 1) {
+                fprintf(fptr, " ");
+            }
+        }
+        fprintf(fptr, ")");
+    }
+    else if(v.tag == CLOS_TAG) {
+        fprintf(fptr, "#<procedure>");
+    }
+    else if(v.tag == TOK_TAG) {
+        fprintf(fptr, "#<TOK %c>", v.tk);
+    }
+    else if(v.tag == FILE_TAG) {
+        fprintf(fptr, "#<FILE %p>\n", v.fp);
+    }
+    else if(v.tag == CONT_TAG) {
+        fprintf(fptr, "#<CONT>");
+    }
+    else {
+        TRACE_ERR();
+        fprintf(stderr, "unknown object: %d\n", v.tag);
+        abort();
+    }
+}
+
+void writeln_obj(Object v, FILE *fptr) {
+    write_obj(v, fptr);
+    putc('\n', fptr);
+}
+
+// eval helpers
+bool obj_eq(Object x, Object y){
+    if(x.tag != y.tag){
+        return false;
+    }
+    else if(x.tag == EOF_TAG || x.tag == NIL_TAG || x.tag == VOID_TAG) {
+        return true;
+    }
+    else if(x.tag == SYM_TAG || x.tag == VEC_TAG
+            || x.tag == PAIR_TAG || x.tag == CLOS_TAG
+            || x.tag == BYTEVEC_TAG){
+        return x.ptr == y.ptr;
+    }
+    else if(x.tag == FX_TAG){
+        return x.fx == y.fx;
+    }
+    else if(x.tag == CHAR_TAG){
+        return x.ch == y.ch;
+    }
+    else if(x.tag == BOOL_TAG){
+        return x.b == y.b;
+    }
+    else if(x.tag == STR_TAG){
+        return x.str == y.str;
+    }
+    else if(x.tag == FILE_TAG){
+        return x.fp == y.fp;
+    }
+    else{
+        TRACE_ERR();
+        fprintf(stderr, "unknown tag: %d\n", x.tag);
+        abort();
+    }
+}
+
+Object s_assq(Object sym, Object env) {
+    while(env.tag == PAIR_TAG) {
+        assert(CAR(env).tag == PAIR_TAG);
+        if(obj_eq(sym, CAAR(env))) {
+            return CAR(env);
+            }
+        env = CDR(env);
+    }
+    return make_bool(false);
+}
+
+Object maybe_apply_env(Object sym, Object env) {
+    while(env.tag == PAIR_TAG) {
+        Object val = s_assq(sym, CAR(env));
+        if(val.tag == PAIR_TAG) {
+            return val;
+        }
+        env = CDR(env);
+    }
+    return make_bool(false);
+}
+
+// eval loop
+void apply_cont() {
+    assert(CONT.tag == CLOS_TAG && CONT.len >= 1);
+    assert(CONT.ptr[0].tag == CONT_TAG);
+    NEXT = CONT.ptr[0].cont;
+}
+
+void implicit_ret_cont() {
+    assert(CONT.tag == CLOS_TAG && CONT.len == 3 && CONT.ptr[0].cont == implicit_ret_cont);
+    CONT = CONT.ptr[2];
     NEXT = apply_cont;
 }
 
-// #(_ fp cont)
-void parse_dotted_cont(){
-    // swap VAL and fp
-    PROC = VAL;
-    VAL = CONT.ptr[1];
-    CONT.ptr[1] = PROC;
-    next_token();
-    VAL = CONT.ptr[1];
+void explicit_ret_cont() {
+    assert(is_list_one(VAL));
+    assert(PROC.tag == CLOS_TAG && PROC.len == 2 && PROC.ptr[0].cont == explicit_ret_cont);
+    VAL = CAR(VAL);
+    CONT = PROC.ptr[1];
+    NEXT = apply_cont;
+}
+
+// #(_ env cont)
+void after_macro_cont() {
+    assert(CONT.tag == CLOS_TAG && CONT.len >= 3 && CONT.ptr[0].tag == CONT_TAG && CONT.ptr[0].cont == after_macro_cont);
+    ENV = CONT.ptr[CONT.len - 2];
+    CONT = CONT.ptr[CONT.len - 1];
+    EXP = VAL;
+    NEXT = eval;
+}
+
+// #(_ params body env)
+void apply_clos() {
+    assert(PROC.len >= 4);
+    EXP = alloc_pair();
+    EXP.ptr[0] = PROC.ptr[1];
+    EXP.ptr[1] = VAL;
+    ENV = make_nil();
+    ENV = alloc_pair();
+    VAL = alloc_pair();
+    CAR(VAL) = add_symbol_cstr("ENV");
+    CDR(VAL) = make_bool(false);
+    CAR(ENV) = VAL;
+    while(EXP.ptr[0].tag == PAIR_TAG) {
+        assert(EXP.ptr[1].tag == PAIR_TAG);
+        VAL = alloc_pair();
+        CDR(VAL) = ENV;
+        ENV = VAL;
+        VAL = alloc_pair();
+        CAR(VAL) = CAR(EXP.ptr[0]);
+        CDR(VAL) = CAR(EXP.ptr[1]);
+        CAR(ENV) = VAL;
+        EXP.ptr[0] = CDR(EXP.ptr[0]);
+        EXP.ptr[1] = CDR(EXP.ptr[1]);
+    }
+    if(EXP.ptr[0].tag == SYM_TAG) {
+        VAL = alloc_pair();
+        CDR(VAL) = ENV;
+        ENV = VAL;
+        VAL = alloc_pair();
+        CAR(VAL) = EXP.ptr[0];
+        CDR(VAL) = EXP.ptr[1];
+        CAR(ENV) = VAL;
+    }
+    else {
+        assert(EXP.ptr[0].tag == EXP.ptr[1].tag && EXP.ptr[0].tag == NIL_TAG);
+    }
+    VAL = alloc_pair();
+    CAR(VAL) = ENV;
+    CDR(VAL) = PROC.ptr[3];
+    ENV = VAL;
+    EXP = PROC.ptr[2];
+    NEXT = eval;
+}
+
+void explicit_multi_values() {
+    assert(CONT.tag == CLOS_TAG && CONT.len == 3 && CONT.ptr[0].cont == explicit_multi_values);
+    PROC = CONT.ptr[1];
+    CONT = CONT.ptr[CONT.len - 1];
+    NEXT = apply_clos;
+}
+
+// #(_ exps ENV CONT)
+void if_cont() {
+    assert(CONT.len >= 4);
+    ENV = CONT.ptr[CONT.len - 2];
+    if(!(VAL.tag == BOOL_TAG && VAL.b == false)) {
+        EXP = CAR(CONT.ptr[1]);
+        NEXT = eval;
+    }
+    else if(CDR(CONT.ptr[1]).tag == PAIR_TAG) {
+        EXP = CADR(CONT.ptr[1]);
+        NEXT = eval;
+    }
+    else {
+        VAL = make_void();
+        NEXT = apply_cont;
+    }
+    CONT = CONT.ptr[CONT.len - 1];
+}
+
+// #(_ name ty ENV CONT)
+void assign_cont() {
+    assert(CONT.len >= 5);
+    assert(obj_eq(CONT.ptr[2], SET_BANG)
+            || obj_eq(CONT.ptr[2], DEFINE)
+            || obj_eq(CONT.ptr[2], DEFMACRO));
+    ENV = CONT.ptr[CONT.len - 2];
+    if(obj_eq(CONT.ptr[2], SET_BANG)) {
+        EXP = maybe_apply_env(CONT.ptr[1], ENV);
+        if(EXP.tag == PAIR_TAG) {
+            CDR(EXP) = VAL;
+        }
+        else {
+            sym_val(CONT.ptr[1], VAL);
+        }
+    }
+    else if(obj_eq(CONT.ptr[2], DEFMACRO)) {
+        assert(VAL.tag == CLOS_TAG && VAL.ptr[0].tag == CONT_TAG);
+        assert(VAL.ptr[0].cont == after_macro_cont || VAL.ptr[0].cont == apply_clos);
+        if(VAL.ptr[0].cont == apply_clos) {
+            EXP = make_clos(after_macro_cont, VAL.len);
+            for(int i = 1; i < VAL.len; ++i) {
+                EXP.ptr[i] = VAL.ptr[i];
+            }
+            VAL = EXP;
+        }
+        sym_val(CONT.ptr[1], VAL);
+    }
+    else { // DEFINE
+        EXP = ENV.tag == PAIR_TAG ? s_assq(CONT.ptr[1], CAR(ENV)) : make_nil();
+        if(EXP.tag == NIL_TAG) {
+            sym_val(CONT.ptr[1], VAL);
+        }
+        else if(EXP.tag == PAIR_TAG) {
+            TRACE_ERR();
+            fprintf(stderr, "rebound?: ");
+            writeln_obj(CONT.ptr[1], stderr);
+            abort();
+        }
+        else {
+            assert(ENV.tag == PAIR_TAG);
+            ENV = CAR(ENV);
+            assert(ENV.tag == PAIR_TAG);
+            PROC = alloc_pair();
+            CAR(PROC) = CONT.ptr[1];
+            CDR(PROC) = VAL;
+            EXP = alloc_pair();
+            CAR(EXP) = PROC;
+            CDR(EXP) = CDR(ENV);
+            CDR(ENV) = EXP;
+        }
+    }
     CONT = CONT.ptr[CONT.len - 1];
     NEXT = apply_cont;
 }
 
-// #(_ car cont)
-void parse_list_cont_2(){
-    PROC = make_pair();
-    CAR(PROC) = CONT.ptr[1];
-    CDR(PROC) = VAL;
-    CONT = CONT.ptr[CONT.len-1];
-    VAL = PROC;
-    NEXT = apply_cont;
-}
-
-// #(_ fp cont)
-void parse_list_cont_1(){
-    PROC = CONT.ptr[1];
-    CONT.ptr[0] = make_fn(parse_list_cont_2);
-    CONT.ptr[1] = VAL;
-    VAL = PROC;
-    NEXT = parse_list;
-}
-
-// #(_ fp cont)
-void parse_list_cont(){
-    if(VAL.tag == TOK_TAG && VAL.tk == ')'){
-        TOK = NIL;
-        VAL = NIL;
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = apply_cont;
+// #(_ vs vs* exps ENV CONT)
+void app_cont() {
+    assert(CONT.len >= 6);
+    EXP = alloc_pair();
+    CAR(EXP) = VAL;
+    if(CONT.ptr[1].tag == NIL_TAG) {
+        CONT.ptr[1] = EXP;
+        CONT.ptr[2] = EXP;
     }
-    else if(VAL.tag == TOK_TAG && VAL.tk == '.'){
-        VAL = CONT.ptr[1];
-        TOK = NIL;
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_dotted_cont);
-        NEXT = parse;
+    else {
+        CDR(CONT.ptr[2]) = EXP;
+        CONT.ptr[2] = EXP;
     }
-    else{
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_list_cont_1);
-        NEXT = parse;
-    }
-}
-
-void parse_list(){
-    assert(VAL.tag == FILE_TAG);
-    PROC = make_vec(3);
-    PROC.ptr[0] = make_fn(parse_list_cont);
-    PROC.ptr[1] = VAL;
-    PROC.ptr[PROC.len-1] = CONT;
-    CONT = PROC;
-    NEXT = peek_token;
-}
-
-// #(_ abrv cont)
-void parse_abrv_cont(){
-    PROC = make_pair();
-    CAR(PROC) = VAL;
-    VAL = make_pair();
-    CDR(VAL) = PROC;
-    CAR(VAL) = CONT.ptr[1];
-    CONT = CONT.ptr[CONT.len-1];
-    NEXT = apply_cont;
-}
-
-// #(_ fp cont)
-void parse_cont(){
-    if(VAL.tag != TOK_TAG){
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = apply_cont;
-    }
-    else if(VAL.tk == '\''){
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_abrv_cont);
-        CONT.ptr[1] = QUOTE;
-        NEXT = parse;
-    }
-    else if(VAL.tk == '`'){
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_abrv_cont);
-        CONT.ptr[1] = QUASIQUOTE;
-        NEXT = parse;
-    }
-    else if(VAL.tk == '@'){
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_abrv_cont);
-        CONT.ptr[1] = UNQUOTE_SPLICING;
-        NEXT = parse;
-    }
-    else if(VAL.tk == ','){
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_abrv_cont);
-        CONT.ptr[1] = UNQUOTE;
-        NEXT = parse;
-    }
-    else if(VAL.tk == VEC_TAG){
-        VAL = CONT.ptr[1];
-        CONT.ptr[0] = make_fn(parse_vector_cont);
-        NEXT = parse_list;
-    }
-    else if(VAL.tk == '('){
-        VAL = CONT.ptr[1];
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = parse_list;
-    }
-    else{
-        assert(false);
-    }
-}
-
-// (file)
-void parse(){
-    assert(VAL.tag == FILE_TAG);
-    PROC = make_vec(3);
-    PROC.ptr[0] = make_fn(parse_cont);
-    PROC.ptr[1] = VAL;
-    PROC.ptr[PROC.len-1] = CONT;
-    CONT = PROC;
-    NEXT = next_token;
-}
-
-Object apply_env(Object x, Object env){
-    Object res = assq(x, env);
-    if(res.tag != PAIR_TAG){
-        fprintf(stderr, "unbound: ");
-        _s_write(stderr, x);
-        putc('\n', stderr);
-        assert(res.tag == PAIR_TAG);
-    }
-    res = CDR(res);
-    return res;
-}
-
-// evaluator
-// #(_ env cont)
-void app_macro_clos_cont_1(){
-    assert(CONT.len == 3);
-    ENV = CONT.ptr[1];
-    CONT = CONT.ptr[CONT.len-1];
-    EXP = VAL;
-    VAL = NIL;
-    NEXT = eval;
-}
-
-// #(_ (,subforms . ,body) env)
-void apply_macro_clos(){
-    NEXT = apply_clos;
-    return;
-}
-
-// #(_ (,params . ,body) env)
-void apply_clos(){
-    // will do extend_env over params and VAL with env until params is empty
-    // only then eval body
-    bool is_macro = PROC.ptr[0].cont == apply_macro_clos;
-    if(is_macro){
-        EXP = make_vec(3);
-        EXP.ptr[0] = make_fn(app_macro_clos_cont_1);
-        EXP.ptr[1] = ENV;
-        EXP.ptr[PROC.len-1] = CONT;
-        CONT = EXP;
-    }
-    ENV = make_vec(3);
-    ENV.ptr[0] = CAR(PROC.ptr[1]);
-    ENV.ptr[1] = PROC.ptr[2];
-    ENV.ptr[2] = CDR(PROC.ptr[1]);
-    while(ENV.ptr[0].tag == PAIR_TAG){
-        assert(VAL.tag == PAIR_TAG);
-        PROC = make_pair();
-        EXP = make_pair();
-        CAR(EXP) = CAR(ENV.ptr[0]);
-        CDR(EXP) = CAR(VAL);
-        CAR(PROC) = EXP;
-        CDR(PROC) = ENV.ptr[1];
-        ENV.ptr[1] = PROC;
-        VAL = CDR(VAL);
-        ENV.ptr[0] = CDR(ENV.ptr[0]);
-    }
-    if(ENV.ptr[0].tag == SYM_TAG){
-        PROC = make_pair();
-        EXP = make_pair();
-        CAR(EXP) = ENV.ptr[0];
-        CDR(EXP) = VAL;
-        CAR(PROC) = EXP;
-        CDR(PROC) = ENV.ptr[1];
-        ENV.ptr[1] = PROC;
-    }
-    VAL = NIL;
-    EXP = make_pair();
-    CAR(EXP) = BEGIN;
-    CDR(EXP) = ENV.ptr[2];
-    ENV = ENV.ptr[1];
-    NEXT = eval;
-}
-
-// #(_ x env cont)
-void assign_cont(){
-    ENV = assq(CONT.ptr[1],CONT.ptr[2]);
-    if(ENV.tag == PAIR_TAG){
-        CDR(ENV) = VAL;
-    }
-    else{
-        ENV = make_pair();
-        PROC = make_pair();
-        CAR(ENV) = CONT.ptr[1];
-        CDR(ENV) = VAL;
-        CAR(PROC) = ENV;
-        append_mut(GLOBALS,PROC);
-    }
-    VAL = NIL;
-    CONT = CONT.ptr[CONT.len-1];
-    NEXT = apply_cont;
-}
-
-// #(_ (conseq altern) env cont)
-void if_cont(){
-    if(eq(VAL, make_bool(false))){
-        EXP = CADR(CONT.ptr[1]);
-        ENV = CONT.ptr[2];
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = eval;
-    }
-    else{
-        EXP = CAR(CONT.ptr[1]);
-        ENV = CONT.ptr[2];
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = eval;
-    }
-}
-
-// #(_ seq env cont)
-void seq_cont(){
-    assert(CONT.ptr[1].tag == PAIR_TAG);
-    EXP = CAR(CONT.ptr[1]);
-    ENV = CONT.ptr[2];
-    NEXT = eval;
-    if(CDR(CONT.ptr[1]).tag != PAIR_TAG){
-        CONT = CONT.ptr[CONT.len - 1];
-    }
-    else{
-        CONT.ptr[1] = CDR(CONT.ptr[1]);
-    }
-}
-
-// #(_ exps values env cont)
-void app_cont(){
-    if(VAL.tag == VEC_TAG
-        && VAL.len >= 1
-        && VAL.ptr[0].tag == FN_TAG
-        && VAL.ptr[0].cont == apply_macro_clos){
-        // NOTE: env should be current env after expanding the thing
+    if((VAL.tag == CLOS_TAG && VAL.len >= 4
+        && VAL.ptr[0].tag == CONT_TAG
+        && VAL.ptr[0].cont == after_macro_cont)) {
         PROC = VAL;
-        VAL = CONT.ptr[1];
-        ENV = CONT.ptr[3];
-        CONT = CONT.ptr[CONT.len-1];
-        NEXT = apply_macro_clos;
-        return;
-    }
-    else if(CONT.ptr[2].tag == NIL_TAG){
-        PROC = make_pair();
-        CAR(PROC) = VAL;
-        CONT.ptr[2] = PROC;
-    }
-    else{
-        PROC = make_pair();
-        CAR(PROC) = VAL;
-        append_mut(CONT.ptr[2], PROC);
-    }
-
-    if(CONT.ptr[1].tag == PAIR_TAG){
-        ENV = CONT.ptr[3];
-        EXP = CAR(CONT.ptr[1]);
-        CONT.ptr[1] = CDR(CONT.ptr[1]);
-        NEXT = eval;
-    }
-    else if(CONT.ptr[2].tag != PAIR_TAG){
-        assert(CONT.ptr[2].tag == PAIR_TAG);
-    }
-    else if(CAR(CONT.ptr[2]).tag == FN_TAG){
-        VAL = CONT.ptr[2];
-        CONT = CONT.ptr[CONT.len - 1];
-        NEXT = CAR(VAL).cont;
-        VAL = CDR(VAL);
-    }
-    else{
-        VAL = CONT.ptr[2];
-        CONT = CONT.ptr[CONT.len-1];
-        PROC = CAR(VAL);
-        VAL = CDR(VAL);
+        EXP = alloc_clos(after_macro_cont, 3);
+        EXP.ptr[EXP.len - 2] = CONT.ptr[CONT.len - 2];
+        EXP.ptr[EXP.len - 1] = CONT.ptr[CONT.len - 1];
+        VAL = CONT.ptr[3];
+        CONT = EXP;
         NEXT = apply_clos;
     }
+    else if(CONT.ptr[3].tag == PAIR_TAG) {
+        EXP = CAR(CONT.ptr[3]);
+        CONT.ptr[3] = CDR(CONT.ptr[3]);
+        ENV = CONT.ptr[CONT.len - 2];
+        NEXT = eval;
+    }
+    else {
+        PROC = CAR(CONT.ptr[1]);
+        VAL = CDR(CONT.ptr[1]);
+        assert(PROC.tag == CLOS_TAG && PROC.len >= 1 && PROC.ptr[0].tag == CONT_TAG);
+        CONT = CONT.ptr[CONT.len - 1];
+        NEXT = PROC.ptr[0].cont;
+    }
 }
 
-void eval(){
-    if(EXP.tag == CHAR_TAG || EXP.tag == FX_TAG || EXP.tag == BOOL_TAG
-       || EXP.tag == STR_TAG || EXP.tag == VEC_TAG
-       || EXP.tag == EOF_TAG){
+// #(_ exps ENV CONT)
+void seq_cont() {
+    assert(CONT.len >= 4);
+    ENV = CONT.ptr[CONT.len - 2];
+    EXP = CAR(CONT.ptr[1]);
+    if(CDR(CONT.ptr[1]).tag == NIL_TAG) {
+        CONT = CONT.ptr[CONT.len - 1];
+    }
+    else {
+        CONT.ptr[1] = CDR(CONT.ptr[1]);
+    }
+    NEXT = eval;
+}
+
+void eval() {
+    if(EXP.tag == FX_TAG
+        || EXP.tag == BOOL_TAG
+        || EXP.tag == CHAR_TAG
+        || EXP.tag == VOID_TAG
+        || EXP.tag == FILE_TAG
+        || EXP.tag == VEC_TAG
+        || EXP.tag == STR_TAG
+        || EXP.tag == BYTEVEC_TAG) {
         VAL = EXP;
         NEXT = apply_cont;
+        return;
     }
-    else if(EXP.tag == SYM_TAG){
-        VAL = apply_env(EXP, ENV);
+    else if(EXP.tag == SYM_TAG) {
         NEXT = apply_cont;
+        VAL = maybe_apply_env(EXP, ENV);
+        if(VAL.tag == PAIR_TAG) {
+            VAL = CDR(VAL);
+            return;
+        }
+        else if(EXP.ptr[0].tag != UNBOUND_TAG) {
+            VAL = EXP.ptr[0];
+            return;
+        }
+        else {
+            TRACE_ERR();
+            fprintf(stderr, "unbound: ");
+            writeln_obj(EXP, stderr);
+            abort();
+        }
     }
-    else if(EXP.tag != PAIR_TAG){
-        _s_write(stderr, EXP);
-        putc('\n', stderr);
-        assert(EXP.tag == PAIR_TAG);
+    else if(!(EXP.tag == PAIR_TAG)) {
+        TRACE_ERR();
+        fprintf(stderr, "unknown expression: ");
+        writeln_obj(EXP, stderr);
+        abort();
     }
-    else if(eq(CAR(EXP), QUOTE)){
+    else if(obj_eq(CAR(EXP), QUOTE)) {
         VAL = CADR(EXP);
         NEXT = apply_cont;
     }
-    else if(eq(CAR(EXP), LAMBDA)){
-        // (lambda ,params . ,body)
-        VAL = make_vec(3);
-        VAL.ptr[0] = make_fn(apply_clos);
-        VAL.ptr[1] = CDR(EXP);
-        VAL.ptr[2] = ENV;
+    else if(obj_eq(CAR(EXP), LAMBDA)) {
+        gc_flip(2 * sizeof(Object));
+        PROC = is_list_one(CDDR(EXP)) ? CADDR(EXP) : make_pair(BEGIN, CDDR(EXP));
+        VAL = alloc_clos(apply_clos, 4);
+        VAL.ptr[1] = CADR(EXP);
+        VAL.ptr[2] = PROC;
+        VAL.ptr[3] = ENV;
         NEXT = apply_cont;
     }
-    else if(eq(CAR(EXP), BEGIN)){
-        PROC = make_vec(4);
-        PROC.ptr[0] = make_fn(seq_cont);
-        PROC.ptr[1] = CDR(EXP);
-        PROC.ptr[2] = ENV;
-        PROC.ptr[PROC.len - 1] = CONT;
-        CONT = PROC;
-        NEXT = seq_cont;
-    }
-    else if(eq(CAR(EXP), IF)){
-        PROC = make_vec(4);
-        PROC.ptr[0] = make_fn(if_cont);
-        PROC.ptr[1] = CDDR(EXP);
-        PROC.ptr[2] = ENV;
-        PROC.ptr[PROC.len - 1] = CONT;
-        CONT = PROC;
+    else if(obj_eq(CAR(EXP), IF)) {
+        VAL = alloc_clos(if_cont, 4);
+        VAL.ptr[1] = CDDR(EXP);
+        VAL.ptr[2] = ENV;
+        VAL.ptr[3] = CONT;
+        CONT = VAL;
         EXP = CADR(EXP);
     }
-    else if(eq(CAR(EXP), SET)){
-        PROC = make_vec(4);
-        PROC.ptr[0] = make_fn(assign_cont);
-        PROC.ptr[1] = CADR(EXP);
-        PROC.ptr[2] = ENV;
-        PROC.ptr[PROC.len - 1] = CONT;
-        CONT = PROC;
-        EXP = CADDR(EXP);
-    }
-    else if(eq(CAR(EXP), DEFMACRO)){
-        // (define-macro (kw . params) . body)
-        VAL = CAADR(EXP); // keyword
-        PROC = EXP;
-        CADR(PROC) = CDADR(PROC);
-        PROC = CDR(PROC);
-        EXP = VAL; // keyword
-
-        VAL = make_vec(3);
-        VAL.ptr[0] = make_fn(apply_macro_clos);
-        VAL.ptr[1] = PROC;
-        VAL.ptr[2] = ENV;
-        PROC = assq(EXP, ENV);
-        if(eq(PROC, make_bool(false))){
-            PROC = make_pair();
-            CAR(PROC) = EXP;
-            CDR(PROC) = VAL;
-            VAL = make_pair();
-            CAR(VAL) = PROC;
-            CDR(VAL) = NIL;
-            append_mut(GLOBALS, VAL);
+    else if(obj_eq(CAR(EXP), BEGIN)) {
+        if(is_list_one(CDR(EXP))) {
+            EXP = CADR(EXP);
         }
-        else{
-            CDR(PROC) = VAL;
+        else {
+            VAL = alloc_clos(seq_cont, 4);
+            VAL.ptr[1] = CDDR(EXP);
+            VAL.ptr[VAL.len - 2] = ENV;
+            VAL.ptr[VAL.len - 1] = CONT;
+            CONT = VAL;
+            EXP = CADR(EXP);
         }
-        VAL = NIL;
-        NEXT = apply_cont;
     }
-    else{
-        PROC = make_vec(5);
-        PROC.ptr[0] = make_fn(app_cont);
-        PROC.ptr[1] = CDR(EXP);
-        PROC.ptr[2] = NIL;
-        PROC.ptr[3] = ENV;
-        PROC.ptr[PROC.len - 1] = CONT;
-        CONT = PROC;
+    else if(obj_eq(CAR(EXP), DEFINE)
+            || obj_eq(CAR(EXP), DEFMACRO)
+            || obj_eq(CAR(EXP), SET_BANG)) {
+        // (def var val)
+        if(CADR(EXP).tag == SYM_TAG) {
+            VAL = alloc_clos(assign_cont, 5);
+            VAL.ptr[1] = CADR(EXP);
+            VAL.ptr[2] = CAR(EXP);
+            VAL.ptr[VAL.len - 2] = ENV;
+            VAL.ptr[VAL.len - 1] = CONT;
+            CONT = VAL;
+            EXP = CADDR(EXP);
+        }
+        // (def (kw . params) . es)
+        else if(CADR(EXP).tag == PAIR_TAG && CAADR(EXP).tag == SYM_TAG) {
+            VAL = alloc_clos(assign_cont, 5);
+            VAL.ptr[1] = CAADR(EXP);
+            VAL.ptr[2] = CAR(EXP);
+            VAL.ptr[VAL.len - 2] = ENV;
+            VAL.ptr[VAL.len - 1] = CONT;
+            CONT = VAL;
+            gc_flip(2 * sizeof(Object));
+            PROC = is_list_one(CDDR(EXP)) ? CADDR(EXP) : make_pair(BEGIN, CDDR(EXP));
+            VAL = alloc_clos(obj_eq(CAR(EXP), DEFMACRO) ? after_macro_cont : apply_clos, 4);
+            VAL.ptr[1] = CDADR(EXP);
+            VAL.ptr[2] = PROC;
+            VAL.ptr[3] = ENV;
+            NEXT = apply_cont;
+        }
+        else {
+            TRACE_ERR();
+            fprintf(stderr, "bad form: ");
+            writeln_obj(EXP, stderr);
+            abort();
+        }
+    }
+    else {
+        VAL = alloc_clos(app_cont, 6);
+        VAL.ptr[1] = make_nil();
+        VAL.ptr[2] = make_nil();
+        VAL.ptr[3] = CDR(EXP);
+        VAL.ptr[VAL.len - 2] = ENV;
+        VAL.ptr[VAL.len - 1] = CONT;
+        CONT = VAL;
         EXP = CAR(EXP);
     }
 }
 
-// garbage collector
-int calc_offset(Object obj){
-    if(obj.tag == VEC_TAG || obj.tag == PAIR_TAG){
-        return (obj.ptr - 1) - tospace_start;
+// entry
+static inline void *ccalloc(size_t __nmemb, size_t __size) {
+    void *ptr = calloc(__nmemb, __size);
+    assert(ptr != NULL);
+    return ptr;
+}
+
+void eval_entry(int argc, char **argv) {
+    fromspace_start = ccalloc(HEAP_SIZE, sizeof(Object));
+    fromspace_end = fromspace_start + HEAP_SIZE;
+    tospace_start = ccalloc(HEAP_SIZE, sizeof(Object));
+    tospace_end = tospace_start + HEAP_SIZE;
+    gc_markers = ccalloc(HEAP_SIZE, sizeof(*gc_markers));
+    free_ptr = fromspace_start;
+    SYMBOLS = make_vec(SYMBOLS_CAPS, make_nil());
+    
+    TOK = make_nil();
+    QUOTE = add_symbol_cstr("quote");
+    QUASIQUOTE = add_symbol_cstr("quasiquote");
+    UNQUOTE = add_symbol_cstr("unquote");
+    UNQUOTE_SPLICING = add_symbol_cstr("unquote-splicing");
+    BEGIN = add_symbol_cstr("begin");
+    LAMBDA = add_symbol_cstr("lambda");
+    IF = add_symbol_cstr("if");
+    SET_BANG = add_symbol_cstr("set!");
+    DEFINE = add_symbol_cstr("define");
+    DEFMACRO = add_symbol_cstr("defmacro");
+
+    Object args = make_vec(argc, make_num(0));
+    for(int i = 0; i < argc; ++i) {
+        args.ptr[i] = make_bytevec((uint8_t*)argv[i], strlen(argv[i]));
     }
-    else if(obj.tag == STR_TAG){
-        return ((Object*)obj.s - 1) - tospace_start;
+    sym_val(add_symbol_cstr("ARGS"), args);
+
+    sym_val(add_symbol_cstr("stderr"), (Object){.tag = FILE_TAG, .fp = stderr});
+    sym_val(add_symbol_cstr("stdout"), (Object){.tag = FILE_TAG, .fp = stdout});
+    sym_val(add_symbol_cstr("stdin"), (Object){.tag = FILE_TAG, .fp = stdin});
+    sym_val(add_symbol_cstr("eof"), (Object){.tag = EOF_TAG});
+
+    add_prim("apply", s_apply_2);
+    add_prim("call-with-values", s_call_with_values);
+    add_prim("call/cc", s_callcc);
+    add_prim("eval", s_eval);
+    add_prim("foreign-call", s_foreign_call);
+    add_prim("collect", s_collect);
+    add_prim("exit", s_exit);
+    add_prim("write", s_write);
+    add_prim("read", s_read);
+    add_prim("newline", s_newline);
+    add_prim("eq?", s_eq);
+    add_prim("void", s_void);
+    add_prim("procedure?", s_proc_pred);
+    add_prim("symbol?", s_sym_pred);
+    add_prim("symbol-hash", s_sym_hash);
+    add_prim("pair?", s_pair_pred);
+    add_prim("cons", s_cons);
+    add_prim("car", s_car);
+    add_prim("cdr", s_cdr);
+    add_prim("set-car!", s_set_car);
+    add_prim("set-cdr!", s_set_cdr);
+    add_prim("integer?", s_int_pred);
+    add_prim("+", s_add);
+    add_prim("-", s_sub);
+    add_prim("*", s_mul);
+    add_prim("div", s_div);
+    add_prim("mod", s_mod);
+    add_prim("ash", s_ash);
+    add_prim("bitwise-ior", s_ior);
+    add_prim("bitwise-and", s_iand);
+    add_prim("<=", s_le);
+    add_prim("<", s_lt);
+    add_prim("=", s_eqn);
+    add_prim(">", s_gt);
+    add_prim(">=", s_ge);
+    add_prim("boolean?", s_bool_pred);
+    add_prim("integer->char", s_int2char);
+    add_prim("char->integer", s_char2int);
+    add_prim("char?", s_char_pred);
+
+    add_prim("string?", s_str_pred);
+    add_prim("make-string", s_make_str);
+    add_prim("string-length", s_str_len);
+    add_prim("string-ref", s_str_ref);
+    add_prim("string-set!", s_str_set);
+
+    add_prim("string->symbol", s_str2sym);
+    add_prim("symbol->string", s_sym2str);
+
+    add_prim("vector?", s_vec_pred);
+    add_prim("make-vector", s_make_vec);
+    add_prim("vector-length", s_vec_len);
+    add_prim("vector-ref", s_vec_ref);
+    add_prim("vector-set!", s_vec_set);
+
+    add_prim("bytevector?", s_bytevec_pred);
+    add_prim("make-bytevector", s_make_bytevec);
+    add_prim("bytevector-length", s_bytevec_len);
+    add_prim("bytevector-u8-ref", s_bytevec_ref);
+    add_prim("bytevector-u8-set!", s_bytevec_set);
+
+    char *inp = getenv("SCM_BOOT");
+    if(inp == NULL) {
+        TRACE_ERR();
+        fprintf(stderr, "expect `SCM_BOOT` environment variable\n");
+        abort();
     }
-    else{
-        _s_write(stderr, obj);
-        putc('\n', stderr);
-        assert(false);
+    FILE *fptr = fopen(inp, "r");
+    if(fptr == NULL) {
+        TRACE_ERR();
+        fprintf(stderr, "expect %s file\n", inp);
+        abort();
+    }
+    EXP = make_pair(BEGIN, parse_all(fptr));
+    fclose(fptr);
+    ENV = make_nil();
+    CONT = alloc_clos(s_exit, 1);
+    NEXT = eval;
+    for(;;) {
+        NEXT();
+    }
+    return;
+}
+
+bool is_nonheap(Object v) {
+    return (v.tag == FX_TAG
+            || v.tag == CHAR_TAG
+            || v.tag == BOOL_TAG
+            || v.tag == FILE_TAG
+            || v.tag == VOID_TAG
+            || v.tag == EOF_TAG
+            || v.tag == NIL_TAG
+            || v.tag == CONT_TAG
+            || v.tag == UNBOUND_TAG
+        );
+}
+
+intptr_t gc_calc_off(Object v) {
+    if(v.tag == CLOS_TAG || v.tag == PAIR_TAG || v.tag == VEC_TAG || v.tag == SYM_TAG) {
+        assert(tospace_start <= v.ptr && v.ptr < tospace_end);
+        return v.ptr - tospace_start;
+    }
+    else if(v.tag == STR_TAG) {
+        Object* ptr = (Object*)v.str;
+        assert(tospace_start <= ptr && ptr < tospace_end);
+        return ptr - tospace_start;
+    }
+    else if(v.tag == BYTEVEC_TAG) {
+        Object* ptr = (Object*)v.bv;
+        assert(tospace_start <= ptr && ptr < tospace_end);
+        return ptr - tospace_start;
+    }
+    else {
+        TRACE_ERR();
+        fprintf(stderr, "unknown object tag %d\n", v.tag);
+        abort();
     }
 }
 
-Object copy_obj(Object obj){
-    Object tmp;
-    if(obj.tag == FX_TAG || obj.tag == CHAR_TAG || obj.tag == BOOL_TAG
-        || obj.tag == NIL_TAG || obj.tag == TOK_TAG || obj.tag == FILE_TAG
-        || obj.tag == FN_TAG || obj.tag == EOF_TAG){
-        return obj;
+Object gc_copy_obj(Object v) {
+    if(is_nonheap(v) || v.len == 0) {
+        return v;
     }
-    else if(obj.tag == SYM_TAG){
-        obj.tag = STR_TAG;
-        obj = copy_obj(obj);
-        obj.tag = SYM_TAG;
-        return obj;
+    assert(free_ptr < scan_ptr);
+    intptr_t idx = gc_calc_off(v);
+    if(gc_markers[idx] == true) {
+        return tospace_start[idx];
     }
-    else if(GC_CELLS[calc_offset(obj)].is_deleted){
-        return GC_CELLS[calc_offset(obj)].obj;
-    }
-    else if(obj.tag == PAIR_TAG){
-        int offset = calc_offset(obj);
-        GC_CELLS[offset].is_deleted = true;
-        tmp = alloc_pair();
-        tmp.ptr[0] = obj.ptr[0];
-        tmp.ptr[1] = obj.ptr[1];
-        GC_CELLS[offset].obj = tmp;
-        return tmp;
-    }
-    else if(obj.tag == VEC_TAG){
-        int offset = calc_offset(obj);
-        GC_CELLS[offset].is_deleted = true;
-        tmp = alloc_vec(obj.len);
-        for(int i = 0; i < obj.len; ++i){
-            tmp.ptr[i] = obj.ptr[i];
+    gc_markers[idx] = true;
+    if(v.tag == CLOS_TAG || v.tag == VEC_TAG || v.tag == PAIR_TAG || v.tag == SYM_TAG) {
+        Object w = make_vec(v.len, make_num(0));
+        w.tag = v.tag;
+        for(int i = 0; i < v.len; ++i) {
+            w.ptr[i] = v.ptr[i];
         }
-        GC_CELLS[offset].obj = tmp;
-        return tmp;
+        tospace_start[idx] = w;
+        *--scan_ptr = w;
+        return w;
     }
-    else if(obj.tag == STR_TAG){
-        int offset = calc_offset(obj);
-        GC_CELLS[offset].is_deleted = true;
-        tmp = alloc_str(obj.len);
-        _strncpy(tmp.s, obj.s, tmp.len+1);
-        GC_CELLS[offset].obj = tmp;
-        return tmp;
+    else if(v.tag == STR_TAG) {
+        Object w = make_str(v.str, v.len);
+        tospace_start[idx] = w;
+        return w;
     }
-    else{
-        fprintf(stderr, "unknown tag: %d\n", obj.tag);
-        assert(false);
+    else if(v.tag == BYTEVEC_TAG) {
+        Object w = make_bytevec(v.bv, v.len);
+        tospace_start[idx] = w;
+        return w;
+    }
+    else {
+        TRACE_ERR();
+        fprintf(stderr, "unknown object tag %d\n", v.tag);
+        abort();
     }
 }
 
-void collect_scan_ptr(){
-    while(scan_ptr < free_ptr){
-        Object obj = *scan_ptr++;
-        if(obj.tag == VEC_TAG || obj.tag == PAIR_TAG){
-            assert(obj.ptr == scan_ptr);
-            for(int i = 0; i < obj.len; ++i){
-                obj.ptr[i] = copy_obj(obj.ptr[i]);
+static inline void gc_scan_pointer() {
+    while(scan_ptr < fromspace_end) {
+        Object v = *scan_ptr; ++scan_ptr;
+        assert(!is_nonheap(v));
+        if(v.tag == CLOS_TAG || v.tag == VEC_TAG || v.tag == PAIR_TAG || v.tag == SYM_TAG) {
+            for(int i = 0; i < v.len; ++i) {
+                v.ptr[i] = gc_copy_obj(v.ptr[i]);
             }
-            scan_ptr = scan_ptr + obj.len;
         }
-        else if(obj.tag == STR_TAG){
-            assert((Object*)obj.s == scan_ptr);
-            int offset = align_to_multiple(sizeof(Object), obj.len + 1) / sizeof(Object);
-            scan_ptr = scan_ptr + offset;
-        }
-        else{
-            fprintf(stderr, "unknown tag: %d\n", obj.tag);
-            assert(false);
+        else {
+            TRACE_ERR();
+            fprintf(stderr, "unknown object tag %d\n", v.tag);
+            abort();
         }
     }
 }
 
-void gc_flip(int sz){
-    if(fromspace_end - free_ptr > sz){
+static inline void resize_tospace() {
+    int tospace_words = (tospace_end - tospace_start);
+    if(tospace_words >= MAX_HEAP_SIZE || tospace_words >= MAX_HEAP_SIZE) {
         return;
     }
-    Object *tmp;
+    Object *tospace_start_new = aligned_alloc(8, MAX_HEAP_SIZE * sizeof(Object));
+    bool *gc_markers_new = aligned_alloc(8, MAX_HEAP_SIZE * sizeof(bool));
+    if(gc_markers_new != NULL && tospace_start_new != NULL) {
+        free(tospace_start);
+        free(gc_markers);
+        tospace_start = tospace_start_new;
+        tospace_end = tospace_start_new + MAX_HEAP_SIZE;
+        gc_markers = gc_markers_new;
+    }
+    else {
+        free(gc_markers_new);
+        free(tospace_start_new);
+        TRACE_ERR();
+        fprintf(stderr, "cannot resize\n");
+        abort();
+    }
+    tospace_start_new = NULL;
+    gc_markers_new = NULL;
+    assert(tospace_start != NULL && tospace_end != NULL && gc_markers != NULL);
+}
+
+static inline intptr_t min(intptr_t x, intptr_t y) {
+    return x < y ? x : y;
+}
+
+static inline intptr_t max(intptr_t x, intptr_t y) {
+    return x < y ? y : x;
+}
+
+void gc_flip(int64_t byte_size) {
+    bool forced_collect = byte_size < 0;
+    byte_size = min(max(byte_size, 0),
+        (SYMBOLS_CAPS * 4 + SYMBOLS_SIZE * 2) * sizeof(Object)
+    );
+    if(!forced_collect && (fromspace_end - free_ptr) * sizeof(Object) > byte_size) {
+        return;
+    }
+    for(int i = 0; i < HEAP_SIZE; ++i) {
+        gc_markers[i] = false;
+    }
+    typeof(free_ptr) tmp;
     tmp = fromspace_start;
     fromspace_start = tospace_start;
     tospace_start = tmp;
-
     tmp = fromspace_end;
     fromspace_end = tospace_end;
     tospace_end = tmp;
-    
+    scan_ptr = fromspace_end;
     free_ptr = fromspace_start;
-    scan_ptr = free_ptr;
-
-    for(int i = 0; i < HEAP_SIZE; ++i){
-        free_ptr[i] = _make_nil();
-        GC_CELLS[i].is_deleted = false;
-        GC_CELLS[i].obj = NIL;
+    for(int i = 0; i < sizeof(CONST_TABLE) / sizeof(CONST_TABLE[0]); ++i) {
+        *CONST_TABLE[i] = gc_copy_obj(*CONST_TABLE[i]);
     }
-    GLOBALS = copy_obj(GLOBALS);
-    SYMBOLS = copy_obj(SYMBOLS);
-    VAL = copy_obj(VAL);
-    EXP = copy_obj(EXP);
-    CONT = copy_obj(CONT);
-    ENV = copy_obj(ENV);
-    PROC = copy_obj(PROC);
-    ARGV = copy_obj(ARGV);
-    NIL = copy_obj(NIL);
-    TOK = copy_obj(TOK);
-    IF = copy_obj(IF);
-    LAMBDA = copy_obj(LAMBDA);
-    BEGIN = copy_obj(BEGIN);
-    SET = copy_obj(SET);
-    DEFMACRO = copy_obj(DEFMACRO);
-    QUOTE = copy_obj(QUOTE);
-    QUASIQUOTE = copy_obj(QUASIQUOTE);
-    UNQUOTE = copy_obj(UNQUOTE);
-    UNQUOTE_SPLICING = copy_obj(UNQUOTE_SPLICING);
-    collect_scan_ptr();
-    if(!(fromspace_end - free_ptr > sz)){
-        fprintf(stderr, "free=%ld requested=%d\n", fromspace_end - free_ptr, sz);
-        assert(fromspace_end - free_ptr > sz);
+    gc_scan_pointer();
+    int n = 2;
+    int d = 4;
+    if((free_ptr - fromspace_start) * d < n * (fromspace_end - fromspace_start) && HEAP_SIZE < MAX_HEAP_SIZE) {
+        HEAP_SIZE = min(2 * HEAP_SIZE, MAX_HEAP_SIZE);
+        resize_tospace();
+        gc_flip(-1);
     }
-}
-
-#pragma region
-void s_eval(){
-    assert(check_list_one(VAL));
-    EXP = CAR(VAL);
-    NEXT = eval;
-}
-
-// (file)
-void s_read(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == FILE_TAG);
-    VAL = CAR(VAL);
-    NEXT = parse;
-}
-
-void s_eof_obj_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == EOF_TAG);
-    NEXT = apply_cont;
-}
-
-void s_write(){
-    if(check_list_two(VAL)){
-        assert(CADR(VAL).tag == FILE_TAG);
-        _s_write(CADR(VAL).fp, CAR(VAL));
-        NEXT = apply_cont;
-    }else{
-        _s_write(stdout, CAR(VAL));
-        NEXT = apply_cont;
+    assert((free_ptr - fromspace_start) * d < n * (fromspace_end - fromspace_start));
+    resize_symbol_table();
+    if((fromspace_end - free_ptr) * sizeof(Object) > byte_size) {
+        return;
     }
+    TRACE_ERR();
+    fprintf(stderr, "insufficient memory\n");
+    abort();
 }
 
-void s_newline(){
-    if(check_list_one(VAL)){
-        assert(CAR(VAL).tag == FILE_TAG);
-        putc('\n', CAR(VAL).fp);
-        NEXT = apply_cont;
-    }else{
-        putc('\n',stdout);
-        NEXT = apply_cont;
-    }
-}
-
-void s_read_char(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == FILE_TAG);
-    char c = getc(CAR(VAL).fp);
-    VAL = c == EOF ?  (Object){.tag=EOF_TAG} : make_char(c);
-    NEXT = apply_cont;
-}
-
-void s_unread_char(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == CHAR_TAG);
-    assert(CADR(VAL).tag == FILE_TAG);
-    ungetc(CAR(VAL).ch, CADR(VAL).fp);
-    NEXT = apply_cont;
-}
-
-void s_write_char(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == CHAR_TAG);
-    if(check_list_two(VAL)){
-        assert(CADR(VAL).tag == FILE_TAG);
-        putc(CAR(VAL).ch, CADR(VAL).fp);
-        NEXT = apply_cont;
-    }else{
-        putc(CAR(VAL).ch, stdout);
-        NEXT = apply_cont;
-    }
-}
-
-void s_writeln(){
-    if(check_list_two(VAL)){
-        assert(CADR(VAL).tag == FILE_TAG);
-        _s_write(CADR(VAL).fp, CAR(VAL));
-        putc('\n', CADR(VAL).fp);
-        NEXT = apply_cont;
-    }else{
-        _s_write(stdout, CAR(VAL));
-        putc('\n', stdout);
-        NEXT = apply_cont;
-    }
-    NEXT = apply_cont;
-}
-
-void s_exit(){
-    if(!check_list_one(VAL)){
-        exit(0);
-    }
-    else if(CAR(VAL).tag == FX_TAG)
-        exit(CAR(VAL).fx);
-    else{
-        exit(1);
-    }
-}
-
-void s_cmd_ln(){
-    VAL = ARGV;
-    NEXT = apply_cont;
-}
-
-#include <sys/unistd.h>
-void s_getpid(){
-    VAL = make_num(getpid());
-    NEXT = apply_cont;
-}
-
-void s_file_exists_pred(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    VAL = make_bool(access(CAR(VAL).s, F_OK) == 0);
-    NEXT = apply_cont;
-}
-
-// (cmd)
-void s_system(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    VAL = make_num(system(CAR(VAL).s));
-    NEXT = apply_cont;
-}
-
-void s_file_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == FILE_TAG);
-    NEXT = apply_cont;
-}
-
-void s_curr_stdout(){
-    VAL = (Object){.tag=FILE_TAG, .fp = stdout};
-    NEXT = apply_cont;
-}
-
-void s_curr_stderr(){
-    VAL = (Object){.tag=FILE_TAG, .fp = stderr};
-    NEXT = apply_cont;
-}
-
-// (fn mode)
-void s_fopen(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    assert(CADR(VAL).tag == STR_TAG);
-    VAL = make_fptr(CAR(VAL).s, CADR(VAL).s);
-    NEXT = apply_cont;
-}
-
-// (file)
-void s_fclose(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == FILE_TAG);
-    fclose(CAR(VAL).fp);
-    VAL = NIL;
-    NEXT = apply_cont;
-}
-
-void s_apply(){
-    assert(check_list_two(VAL));
+// procedures
+void s_apply_2() {
+    assert(is_list_two(VAL));
     PROC = CAR(VAL);
     VAL = CADR(VAL);
-    if(PROC.tag == FN_TAG){
-        NEXT = PROC.cont;
+    assert(PROC.tag == CLOS_TAG && PROC.len >= 1);
+    assert(PROC.ptr[0].tag == CONT_TAG);
+    NEXT = PROC.ptr[0].cont;
+}
+
+void s_call_with_values() {
+    assert(is_list_two(VAL));
+    EXP = alloc_clos(explicit_multi_values, 3);
+    EXP.ptr[1] = CADR(VAL);
+    EXP.ptr[EXP.len - 1] = CONT;
+    CONT = EXP;
+    PROC = CAR(VAL);
+    VAL = make_nil();
+    NEXT = apply_clos;
+}
+
+void s_callcc() {
+    assert(is_list_one(VAL));
+    PROC = CAR(VAL);
+    if(CONT.tag == CLOS_TAG && CONT.len == 3 && CONT.ptr[0].tag == CONT_TAG && (CONT.ptr[0].cont == implicit_ret_cont || CONT.ptr[0].cont == explicit_multi_values)) {
+        CAR(VAL) = CONT.ptr[1];
+        CONT = CONT.ptr[CONT.len - 1];
+        NEXT = apply_clos;
     }
-    else{
+    else {
+        EXP = alloc_clos(explicit_ret_cont, 2);
+        EXP.ptr[EXP.len - 1] = CONT;
+        CAR(VAL) = EXP;
+        EXP = alloc_clos(implicit_ret_cont, 3);
+        EXP.ptr[1] = CAR(VAL);
+        EXP.ptr[EXP.len - 1] = CONT;
+        CONT = EXP;
         NEXT = apply_clos;
     }
 }
 
-void s_boolean_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == BOOL_TAG);
-    NEXT = apply_cont;
+void s_eval() {
+    assert(is_list_one(VAL));
+    EXP = CAR(VAL);
+    ENV = make_nil();
+    NEXT = eval;
 }
 
-void s_char_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == CHAR_TAG);
-    NEXT = apply_cont;
-}
-
-void s_int_to_char(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    VAL = CAR(VAL);
-    VAL.ch = (char) VAL.fx;
-    VAL.tag = CHAR_TAG;
-    NEXT = apply_cont;
-}
-
-void s_char_to_int(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == CHAR_TAG);
-    VAL = CAR(VAL);
-    VAL.fx = (char) VAL.ch;
-    VAL.tag = FX_TAG;
-    NEXT = apply_cont;
-}
-
-void s_integer_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == FX_TAG);
-    NEXT = apply_cont;
-}
-
-void s_eq(){
-    assert(check_list_two(VAL));
-    VAL = make_bool(eq(CAR(VAL), CADR(VAL)));
-    NEXT = apply_cont;
-}
-
-void s_lt(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_bool(CAR(VAL).fx < CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-// (v1 v2)
-void s_le(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_bool(CAR(VAL).fx <= CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-void s_eqn(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_bool(CAR(VAL).fx == CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-void s_ge(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_bool(CAR(VAL).fx >= CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-void s_gt(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_bool(CAR(VAL).fx > CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-// (v1 v2)
-void s_add(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_num(CAR(VAL).fx + CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-// (v1 v2)
-void s_sub(){
-    assert(VAL.tag == PAIR_TAG);
-    assert(CAR(VAL).tag == FX_TAG);
-    if(CDR(VAL).tag != PAIR_TAG){
-        VAL = make_num(-CAR(VAL).fx);
-        NEXT = apply_cont;
+void *s_dlopen(const char* inp, const char* entry) {
+    const char *_inp = inp;
+    const char *_ent = entry;
+    void *handle = dlopen(_inp, RTLD_NOW);
+    if (!handle) {
+        fprintf(stderr, "\n[%s:%d] %s: dlopen failed: %s %s\n", __FILE__, __LINE__, __func__, _inp, dlerror());
+        abort();
     }
-    else{
-        assert(CADR(VAL).tag == FX_TAG);
-        VAL = make_num(CAR(VAL).fx - CADR(VAL).fx);
-        NEXT = apply_cont;
+    void *sym = dlsym(handle, _ent);
+    if (!sym) {
+        fprintf(stderr, "\n[%s:%d] %s: dlsym failed: %s %s\n", __FILE__, __LINE__, __func__, _ent, dlerror());
+        dlclose(handle);
+        abort();
     }
+    return sym;
 }
 
-void s_mul(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_num(CAR(VAL).fx * CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-void s_div(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).fx != 0);
-    VAL = make_num(CAR(VAL).fx / CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-void s_mod(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).fx != 0);
-    VAL = make_num(CAR(VAL).fx % CADR(VAL).fx);
-    NEXT = apply_cont;
-}
-
-void s_ash(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    if(CADR(VAL).fx < 0){
-        VAL = make_num(CAR(VAL).fx >> -CADR(VAL).fx);
-    }
-    else{
-        VAL = make_num(CAR(VAL).fx << CADR(VAL).fx);
+void s_foreign_call() {
+    assert(is_list_two(VAL));
+    EXP = CAR(VAL);
+    VAL = CADR(VAL);
+    assert(VAL.tag == VEC_TAG && VAL.len <= 6);
+    assert(EXP.tag == BYTEVEC_TAG && EXP.bv[EXP.len - 1] == '\0');
+    union {
+        Object (*f0)(void);
+        Object (*f1)(Object);
+        Object (*f2)(Object, Object);
+        Object (*f3)(Object, Object, Object);
+        Object (*f4)(Object, Object, Object, Object);
+        Object (*f5)(Object, Object, Object, Object, Object);
+        Object (*f6)(Object, Object, Object, Object, Object, Object);
+    } fn;
+    fn.f0 = (Object (*) (void)) s_dlopen(NULL, (char*)EXP.bv);
+    int argc = VAL.len;
+    switch (argc) {
+    case 0:
+        VAL = fn.f0();
+        break;
+    case 1:
+        VAL = fn.f1(VAL.ptr[0]);
+        break;
+    case 2:
+        VAL = fn.f2(VAL.ptr[0], VAL.ptr[1]);
+        break;
+    case 3:
+        VAL = fn.f3(VAL.ptr[0], VAL.ptr[1], VAL.ptr[2]);
+        break;
+    case 4:
+        VAL = fn.f4(VAL.ptr[0], VAL.ptr[1], VAL.ptr[2], VAL.ptr[3]);
+        break;
+    case 5:
+        VAL = fn.f5(VAL.ptr[0], VAL.ptr[1], VAL.ptr[2], VAL.ptr[3], VAL.ptr[4]);
+        break;
+    case 6:
+        VAL = fn.f6(VAL.ptr[0], VAL.ptr[1], VAL.ptr[2], VAL.ptr[3], VAL.ptr[4], VAL.ptr[5]);
+        break;
+    default:
+        assert(!"invalid arity for foreign call");
     }
     NEXT = apply_cont;
 }
 
-void s_band(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_num(CAR(VAL).fx & CADR(VAL).fx);
+void s_collect() {
+    int64_t sz = 128 * sizeof(Object);
+    assert((VAL.tag == NIL_TAG) || (is_list_one(VAL) && CAR(VAL).tag == FX_TAG && CAR(VAL).fx > 0));
+    sz = is_list_one(VAL) ? (CAR(VAL).fx > sz ? CAR(VAL).fx : sz) : sz;
+    VAL = make_void();
+    gc_flip(sz);
     NEXT = apply_cont;
 }
 
-void s_ior(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_num(CAR(VAL).fx | CADR(VAL).fx);
+void s_exit() {
+    exit(is_list_one(VAL) && CAR(VAL).tag == FX_TAG ? CAR(VAL).fx : 0);
+}
+
+void s_write() {
+    if(is_list_two(VAL)) {
+        assert(CADR(VAL).tag == FILE_TAG);
+        write_obj(CAR(VAL), CADR(VAL).fp);
+    }
+    else {
+        assert(is_list_one(VAL));
+        write_obj(CAR(VAL), stdout);
+    }
+    VAL = make_void();
     NEXT = apply_cont;
 }
 
-void s_proc_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == VEC_TAG
-                    && CAR(VAL).len == 3
-                    && CAR(VAL).ptr[0].tag == FN_TAG
-                    && CAR(VAL).ptr[0].cont == apply_clos);
+void s_newline() {
+    if(is_list_one(VAL)) {
+        assert(CAR(VAL).tag == FILE_TAG);
+        putc('\n', CAR(VAL).fp);
+    }
+    else {
+        assert(VAL.tag == NIL_TAG);
+        putc('\n', stdout);
+    }
+    VAL = make_void();
     NEXT = apply_cont;
 }
 
-void s_null_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == NIL_TAG);
+void s_read() {
+    gc_flip(1024 * sizeof(Object));
+    assert(is_list_one(VAL));
+    assert(CAR(VAL).tag == FILE_TAG);
+    VAL = parse(CAR(VAL).fp);
     NEXT = apply_cont;
 }
 
-void s_pair_pred(){
-    assert(check_list_one(VAL));
+void s_eq() {
+    assert(is_list_two(VAL));
+    VAL = make_bool(obj_eq(CAR(VAL), CADR(VAL)));
+    NEXT = apply_cont;
+}
+
+void s_void() {
+    assert(VAL.tag == NIL_TAG);
+    VAL = make_void();
+    NEXT = apply_cont;
+}
+
+void s_proc_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == CLOS_TAG);
+    NEXT = apply_cont;
+}
+
+void s_sym_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == SYM_TAG);
+    NEXT = apply_cont;
+}
+
+void s_sym_hash() {
+    assert(is_list_one(VAL));
+    VAL = sym_hash(CAR(VAL));
+    NEXT = apply_cont;
+}
+
+void s_pair_pred() {
+    assert(is_list_one(VAL));
     VAL = make_bool(CAR(VAL).tag == PAIR_TAG);
     NEXT = apply_cont;
 }
 
-void s_cons(){
-    assert(check_list_two(VAL));
-    PROC = make_pair();
-    CAR(PROC) = CAR(VAL);
-    CDR(PROC) = CADR(VAL);
-    VAL = PROC;
+void s_cons() {
+    assert(is_list_two(VAL));
+    EXP = alloc_pair();
+    CAR(EXP) = CAR(VAL);
+    CDR(EXP) = CADR(VAL);
+    VAL = EXP;
     NEXT = apply_cont;
 }
 
-void s_car(){
-    assert(check_list_one(VAL));
+void s_car() {
+    assert(is_list_one(VAL));
     assert(CAR(VAL).tag == PAIR_TAG);
     VAL = CAAR(VAL);
     NEXT = apply_cont;
 }
 
-void s_cdr(){
-    assert(check_list_one(VAL));
+void s_cdr() {
+    assert(is_list_one(VAL));
     assert(CAR(VAL).tag == PAIR_TAG);
     VAL = CDAR(VAL);
     NEXT = apply_cont;
 }
 
-void s_set_car(){
-    assert(check_list_two(VAL));
+void s_set_car() {
+    assert(is_list_two(VAL));
     assert(CAR(VAL).tag == PAIR_TAG);
     CAAR(VAL) = CADR(VAL);
     NEXT = apply_cont;
 }
 
-void s_set_cdr(){
-    assert(check_list_two(VAL));
+void s_set_cdr() {
+    assert(is_list_two(VAL));
     assert(CAR(VAL).tag == PAIR_TAG);
     CDAR(VAL) = CADR(VAL);
     NEXT = apply_cont;
 }
 
-void s_sym_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == SYM_TAG);
+void s_int_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == FX_TAG);
     NEXT = apply_cont;
 }
 
-void s_sym_to_str(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == SYM_TAG);
-    PROC = make_str('\0', CAR(VAL).len);
-    _strncpy(PROC.s, CAR(VAL).s, CAR(VAL).len+1);
-    VAL = PROC;
+void s_add() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_num(CAR(VAL).fx + CADR(VAL).fx);
     NEXT = apply_cont;
 }
 
-void s_str_to_sym(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    _strncpy(TOKEN_BUF, CAR(VAL).s, CAR(VAL).len+1);
-    TOKEN_BUF[CAR(VAL).len] = '\0';
-    add_symbol(TOKEN_BUF);
+void s_mul() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_num(CAR(VAL).fx * CADR(VAL).fx);
     NEXT = apply_cont;
 }
 
-void s_str_pred(){
-    assert(check_list_one(VAL));
-    VAL = make_bool(CAR(VAL).tag == STR_TAG);
-    NEXT = apply_cont;
-}
-
-void s_make_str(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == FX_TAG);
-    char c = '\0';
-    
-    if(check_list_two(VAL)){
-        assert(CADR(VAL).tag == CHAR_TAG);
-        c = CADR(VAL).ch;
+void s_sub() {
+    if(is_list_two(VAL)) {
+        assert(CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+        VAL = make_num(CAR(VAL).fx - CADR(VAL).fx);
+    } else if(is_list_one(VAL)) {
+        assert(CAR(VAL).tag == FX_TAG);
+        VAL = make_num(-CAR(VAL).fx);
     }
-
-    VAL = make_str(c, CAR(VAL).fx);
+    else {
+        assert(false);
+    }
     NEXT = apply_cont;
 }
 
-void s_str_len(){
-    assert(check_list_one(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    VAL = make_num(CAR(VAL).len);
+void s_div() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_num(CAR(VAL).fx / CADR(VAL).fx);
     NEXT = apply_cont;
 }
 
-void s_str_set(){
-    assert(check_list_three(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    assert(CADDR(VAL).tag == CHAR_TAG);
-    CAR(VAL).s[CADR(VAL).fx] = CADDR(VAL).ch;
+void s_mod() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_num(CAR(VAL).fx % CADR(VAL).fx);
     NEXT = apply_cont;
 }
 
-void s_str_ref(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == STR_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
-    VAL = make_char(CAR(VAL).s[CADR(VAL).fx]);
+void s_ash() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    if(CADR(VAL).fx < 0) {
+       VAL = make_num(CAR(VAL).fx >> -CADR(VAL).fx);
+    }
+    else {
+        VAL = make_num(CAR(VAL).fx << CADR(VAL).fx);
+    }
     NEXT = apply_cont;
 }
 
-void s_vec_pred(){
-    assert(check_list_one(VAL));
+void s_ior() {
+    intptr_t v = 0;
+    while(VAL.tag == PAIR_TAG) {
+        assert(CAR(VAL).tag == FX_TAG);
+        v |= CAR(VAL).fx;
+        VAL = CDR(VAL);
+    }
+    VAL = make_num(v);
+    NEXT = apply_cont;
+}
+
+void s_iand() {
+    intptr_t v = ~0;
+    while(VAL.tag == PAIR_TAG) {
+        assert(CAR(VAL).tag == FX_TAG);
+        v &= CAR(VAL).fx;
+        VAL = CDR(VAL);
+    }
+    VAL = make_num(v);
+    NEXT = apply_cont;
+}
+
+void s_lt() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_bool(CAR(VAL).fx < CADR(VAL).fx);
+    NEXT = apply_cont;
+}
+
+void s_le() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_bool(CAR(VAL).fx <= CADR(VAL).fx);
+    NEXT = apply_cont;
+}
+
+void s_eqn() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_bool(CAR(VAL).fx == CADR(VAL).fx);
+    NEXT = apply_cont;
+}
+
+void s_gt() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_bool(CAR(VAL).fx > CADR(VAL).fx);
+    NEXT = apply_cont;
+}
+
+void s_ge() {
+    assert(is_list_two(VAL) && CAR(VAL).tag == FX_TAG && CADR(VAL).tag == FX_TAG);
+    VAL = make_bool(CAR(VAL).fx >= CADR(VAL).fx);
+    NEXT = apply_cont;
+}
+
+void s_bool_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == BOOL_TAG);
+    NEXT = apply_cont;
+}
+
+void s_int2char() {
+    assert(is_list_one(VAL));
+    assert(CAR(VAL).tag == FX_TAG);
+    VAL = make_char(CAR(VAL).fx);
+    NEXT = apply_cont;
+}
+
+void s_char2int() {
+    assert(is_list_one(VAL));
+    assert(CAR(VAL).tag == CHAR_TAG);
+    VAL = make_num(CAR(VAL).ch);
+    NEXT = apply_cont;
+}
+
+void s_char_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == CHAR_TAG);
+    NEXT = apply_cont;
+}
+
+void s_vec_pred() {
+    assert(is_list_one(VAL));
     VAL = make_bool(CAR(VAL).tag == VEC_TAG);
     NEXT = apply_cont;
 }
 
-void s_make_vec(){
-    assert(check_list_one(VAL));
+void s_make_vec() {
+    assert(is_list_two(VAL) || is_list_one(VAL));
     assert(CAR(VAL).tag == FX_TAG);
-    VAL = make_vec(CAR(VAL).fx);
-    for(int i = 0; i < VAL.len; ++i){
-        VAL.ptr[i] = make_num(0);
-    }
+    EXP = is_list_two(VAL) ? CADR(VAL) : make_num(0);
+    gc_flip(CAR(VAL).fx * sizeof(Object));
+    VAL = make_vec(CAR(VAL).fx, EXP);
     NEXT = apply_cont;
 }
 
-void s_vec_len(){
-    assert(check_list_one(VAL));
+void s_vec_len() {
+    assert(is_list_one(VAL));
     assert(CAR(VAL).tag == VEC_TAG);
     VAL = make_num(CAR(VAL).len);
     NEXT = apply_cont;
 }
 
-void s_vec_ref(){
-    assert(check_list_two(VAL));
-    assert(CAR(VAL).tag == VEC_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
+void s_vec_ref() {
+    assert(is_list_two(VAL));
+    assert(CAR(VAL).tag == VEC_TAG && CADR(VAL).tag == FX_TAG);
+    assert(CADR(VAL).fx >= 0 && CAR(VAL).len > CADR(VAL).fx);
     VAL = CAR(VAL).ptr[CADR(VAL).fx];
     NEXT = apply_cont;
 }
 
-void s_vec_set(){
-    assert(check_list_three(VAL));
-    assert(CAR(VAL).tag == VEC_TAG);
-    assert(CADR(VAL).tag == FX_TAG);
+void s_vec_set() {
+    assert(is_list_three(VAL));
+    assert(CAR(VAL).tag == VEC_TAG && CADR(VAL).tag == FX_TAG);
+    assert(CADR(VAL).fx >= 0 && CAR(VAL).len > CADR(VAL).fx);
     CAR(VAL).ptr[CADR(VAL).fx] = CADDR(VAL);
     NEXT = apply_cont;
 }
-#pragma endregion
+
+void s_str_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == STR_TAG);
+    NEXT = apply_cont;
+}
+
+void s_make_str() {
+    assert(is_list_two(VAL) || is_list_one(VAL));
+    assert(CAR(VAL).tag == FX_TAG);
+    uint32_t ch = is_list_two(VAL) ? CADR(VAL).fx : 0;
+    gc_flip(CAR(VAL).fx * sizeof(uint32_t));
+    VAL = make_str(NULL, CAR(VAL).fx);
+    for(int i = 0; i < VAL.len; ++i) {
+        VAL.str[i] = ch;
+    }
+    NEXT = apply_cont;
+}
+
+void s_str_len() {
+    assert(is_list_one(VAL));
+    assert(CAR(VAL).tag == STR_TAG);
+    VAL = make_num(CAR(VAL).len);
+    NEXT = apply_cont;
+}
+
+void s_str_ref() {
+    assert(is_list_two(VAL));
+    assert(CAR(VAL).tag == STR_TAG && CADR(VAL).tag == FX_TAG);
+    assert(CADR(VAL).fx >= 0 && CAR(VAL).len > CADR(VAL).fx);
+    VAL = make_char(CAR(VAL).str[CADR(VAL).fx]);
+    NEXT = apply_cont;
+}
+
+void s_str_set() {
+    assert(is_list_three(VAL));
+    assert(CAR(VAL).tag == STR_TAG && CADR(VAL).tag == FX_TAG && CADDR(VAL).tag == CHAR_TAG);
+    assert(CADR(VAL).fx >= 0 && CAR(VAL).len > CADR(VAL).fx);
+    CAR(VAL).str[CADR(VAL).fx] = CADDR(VAL).ch;
+    NEXT = apply_cont;
+}
+
+void s_str2sym() {
+    assert(is_list_one(VAL));
+    assert(CAR(VAL).tag == STR_TAG);
+    gc_flip(CAR(VAL).len * sizeof(uint32_t) + 3 * sizeof(Object));
+    VAL = add_symbol(CAR(VAL).str, CAR(VAL).len);
+    NEXT = apply_cont;
+}
+
+void s_sym2str() {
+    assert(is_list_one(VAL));
+    VAL = sym_name(CAR(VAL));
+    gc_flip(VAL.len * sizeof(uint32_t));
+    VAL = make_str(VAL.str, VAL.len);
+    NEXT = apply_cont;
+}
+
+void s_bytevec_pred() {
+    assert(is_list_one(VAL));
+    VAL = make_bool(CAR(VAL).tag == BYTEVEC_TAG);
+    NEXT = apply_cont;
+}
+
+void s_make_bytevec() {
+    assert(is_list_two(VAL) || is_list_one(VAL));
+    assert(CAR(VAL).tag == FX_TAG);
+    EXP = VAL;
+    gc_flip(CAR(VAL).fx);
+    VAL = make_bytevec(NULL, CAR(VAL).fx);
+    if(is_list_two(EXP)) {
+        assert(CADR(EXP).tag == FX_TAG);
+        assert(0 <= CADR(EXP).fx && CADR(EXP).fx <= 255);
+        uint8_t k = CADR(EXP).fx;
+        for(int i = 0; i < VAL.len; ++i) {
+            VAL.bv[i] = k;
+        }
+    }
+    NEXT = apply_cont;
+}
+
+void s_bytevec_len() {
+    assert(is_list_one(VAL));
+    assert(CAR(VAL).tag == BYTEVEC_TAG);
+    VAL = make_num(CAR(VAL).len);
+    NEXT = apply_cont;
+}
+
+void s_bytevec_ref() {
+    assert(is_list_two(VAL));
+    assert(CAR(VAL).tag == BYTEVEC_TAG && CADR(VAL).tag == FX_TAG);
+    assert(CADR(VAL).fx >= 0 && CAR(VAL).len > CADR(VAL).fx);
+    VAL = make_num(CAR(VAL).bv[CADR(VAL).fx]);
+    NEXT = apply_cont;
+}
+
+void s_bytevec_set() {
+    assert(is_list_three(VAL));
+    assert(CAR(VAL).tag == BYTEVEC_TAG && CADR(VAL).tag == FX_TAG && CADDR(VAL).tag == FX_TAG);
+    assert(CADR(VAL).fx >= 0 && CAR(VAL).len > CADR(VAL).fx);
+    assert(0 <= CADDR(VAL).fx && CADDR(VAL).fx <= 255);
+    CAR(VAL).bv[CADR(VAL).fx] = CADDR(VAL).fx;
+    NEXT = apply_cont;
+}
+
+Object s_fwrite(Object bv, Object start, Object end, Object fptr) {
+    assert(bv.tag == BYTEVEC_TAG);
+    assert(start.tag == FX_TAG);
+    assert(end.tag == FX_TAG);
+    assert(end.fx >= 0 && start.fx >= 0 && end.fx - start.fx <= bv.len);
+    assert(fptr.tag == FILE_TAG);
+    fwrite(bv.bv + start.fx, 1, end.fx - start.fx, fptr.fp);
+    return make_void();
+}
+
+Object s_fread(Object bv, Object start, Object end, Object fptr) {
+    assert(bv.tag == BYTEVEC_TAG);
+    assert(start.tag == FX_TAG);
+    assert(end.tag == FX_TAG);
+    assert(end.fx >= 0 && start.fx >= 0 && end.fx - start.fx <= bv.len);
+    assert(fptr.tag == FILE_TAG);
+    size_t sz = fread(bv.bv + start.fx, 1, end.fx - start.fx, fptr.fp);
+    if(sz == end.fx - start.tag) {
+        return make_num(sz);
+    }
+    else if(feof(fptr.fp)) {
+        return (Object){.tag = EOF_TAG};
+    }
+    else {
+        return make_void();
+    }
+}
+
+Object s_fopen(Object path, Object mode) {
+    assert(path.tag == BYTEVEC_TAG && mode.tag == BYTEVEC_TAG);
+    assert(path.bv[path.len - 1] == '\0');
+    assert(mode.bv[mode.len - 1] == '\0');
+    FILE *fp = fopen((char*)path.bv, (char*)mode.bv);
+    return fp == NULL ? make_num(0) : (Object){.tag = FILE_TAG, .fp = fp}; 
+}
+
+Object s_fclose(Object file) {
+    assert(file.tag == FILE_TAG);
+    return make_num(fclose(file.fp));
+}
+
+Object s_system(Object cmd) {
+    assert(cmd.tag == BYTEVEC_TAG);
+    assert(cmd.bv[cmd.len - 1] == '\0');
+    return make_num(system((char*)cmd.bv));
+}
+
+Object s_getenv(Object name) {
+    assert(name.tag == BYTEVEC_TAG);
+    assert(name.bv[name.len - 1] == '\0');
+    char *r = getenv((char*)name.bv);
+    if(r == NULL) {
+        return make_bool(false);
+    }
+    else {
+        return make_bytevec((uint8_t*)r, strlen(r));
+    }
+}
+
+Object s_setenv(Object name, Object val) {
+    assert(name.tag == BYTEVEC_TAG && val.tag == BYTEVEC_TAG);
+    assert(name.bv[name.len - 1] == '\0');
+    assert(val.bv[val.len - 1] == '\0');
+    setenv((char*)name.bv, (char*)val.bv, 1);
+    return make_void();
+}
+
+#include <unistd.h>
+Object s_getpid() {
+    return make_num(getpid());
+}
