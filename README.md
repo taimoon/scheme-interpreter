@@ -19,11 +19,12 @@ The usage involve complicated bootstrapping step. These are workarounds to strea
 ```bash
 make clean
 make all
-BATCH_MODE= RIDER=KICK SCM_BOOT="kernel.scm" ./main.out -E kernel-rider.scm kernel.scm
-BATCH_MODE= SCM_BOOT=kernel-rider.scm ./main.out -E kernel-exp.scm kernel.scm
-BATCH_MODE= SCM_BOOT=kernel-rider.scm ./main.out -E a.scm test.scm
-BATCH_MODE= SCM_BOOT=a.scm ./main.out
-./main.out
+export HEAP_SIZE=8388608
+BATCH_MODE= RIDER=KICK SCM_BOOT="kernel.scm" ./interp.out -E kernel-rider.scm kernel.scm
+BATCH_MODE= SCM_BOOT=kernel-rider.scm ./interp.out -E kernel-exp.scm kernel.scm
+BATCH_MODE= SCM_BOOT=kernel-rider.scm ./interp.out -E a.scm test/test-0.scm
+BATCH_MODE= SCM_BOOT=a.scm ./interp.out
+./interp.out # start in REPL mode
 ```
 
 The `-E <output-file> <input-file> ...` option expands the input Scheme files and concatenates the result into `<output-file>`.
