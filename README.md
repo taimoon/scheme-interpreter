@@ -6,16 +6,24 @@ In other words, the program is meant to be thrown away once bootstrap the compil
 Therefore, this repo lacks of how to use interpreter itself.
 Furthermore, the program is hacky and the technique here is not well documented here.
 
+Another goal is to study baremetal programming by porting the scheme interpreter over baremetal.
+
 For background and development notes, see [CHANGELOG](CHANGELOG.md).
 
 # How to use
 
+## Bootstrapping
+
 The usage involve complicated bootstrapping step. These are workarounds to streamline and speed up macro expansion during compiler bootstrap.
 
 ```bash
-gcc -O2 -fno-omit-frame-pointer -g -Wall -rdynamic interp.c main.c -o interp.out
-RIDER=KICK SCM_BOOT="kernel.scm" ./interp.out -E kernel-rider.scm kernel.scm
-SCM_BOOT="kernel-rider.scm" ./interp.out test.scm
+make clean
+make all
+BATCH_MODE= RIDER=KICK SCM_BOOT="kernel.scm" ./main.out -E kernel-rider.scm kernel.scm
+BATCH_MODE= SCM_BOOT=kernel-rider.scm ./main.out -E kernel-exp.scm kernel.scm
+BATCH_MODE= SCM_BOOT=kernel-rider.scm ./main.out -E a.scm test.scm
+BATCH_MODE= SCM_BOOT=a.scm ./main.out
+./main.out
 ```
 
 The `-E <output-file> <input-file> ...` option expands the input Scheme files and concatenates the result into `<output-file>`.
@@ -23,14 +31,24 @@ Generating kernel-rider.scm takes roughly a minute.
 Here, test.scm is your intended input.
 
 Since `kernel-rider.scm` contains CLI handling and always loads `test.scm`, that you might not want this.
-In that case, you can skip the rider kick, but you must ensure that the interpreter runs the expanded `kernel.scm` first before continuing with your program and for example, you can achieve this by starting your program with `(include "kernel-exp.scm")`.: 
+In that case, you can skip the rider kick, but you must ensure that the interpreter runs the expanded `kernel.scm` first before continuing with your program and for example, you can achieve this by starting your program with `(include "kernel-exp.scm")`.
+
+## Compiling for Pico
 
 ```bash
-gcc -O2 -fno-omit-frame-pointer -g -Wall -rdynamic interp.c main.c -o interp.out
-RIDER=KICK SCM_BOOT="kernel.scm" ./interp.out -E kernel-rider.scm kernel.scm
-SCM_BOOT=kernel-rider.scm ./interp.out -E kernel-exp.scm kernel.scm
-SCM_BOOT=kernel-rider.scm ./interp.out -E a.scm test.scm
-SCM_BOOT=a.scm ./interp.out
+./pico_setup.sh
+source env.sh
+mkdir -p build
+cd build
+cmake ..
+make -j
+```
+
+It produces `main.uf2` and flash it to the pico board. Once start up, press enter twice, REPL will be up
+
+```scheme
+Scheme REPL
+> 
 ```
 
 # Features
@@ -38,8 +56,8 @@ SCM_BOOT=a.scm ./interp.out
 - Minimal Scheme subset, sufficient to bootstrap the compiler
 - LISP-style macros (unhygienic, `define-macro`)
 - eval (runtime evaluation of code expressions)
-- call/cc (partial support)
-- multiple-values (partial support)
+- call/cc
+- multiple-values
 - First-class functions
 - Interpreter semantics
 

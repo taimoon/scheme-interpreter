@@ -1,10 +1,10 @@
 (define fread
-  (let ((fread (make-foreign-procedure s_fread 4)))
+  (let ((fread (make-foreign-procedure s_sys_fread 4)))
     (lambda (buf start end %ip)
       (fread buf start end %ip))))
 
 (define fwrite
-  (let ((fwrite (make-foreign-procedure s_fwrite 4)))
+  (let ((fwrite (make-foreign-procedure s_sys_fwrite 4)))
     (lambda (buf start end %op)
       (fwrite buf start end %op))))
 
@@ -167,10 +167,10 @@
     (lambda () op)))
 
 (define fopen
-  (let ((fopen (make-foreign-procedure s_fopen 2)))
+  (let ((fopen (make-foreign-procedure s_sys_fopen 2)))
     (lambda (path mode) (fopen (%string->utf8 path #t) (%string->utf8 mode #t)))))
 
-(define fclose (make-foreign-procedure s_fclose 1))
+(define fclose (make-foreign-procedure s_sys_fclose 1))
 
 (define (file-exists? path)
   (let ((fp (fopen path "r")))

@@ -1,36 +1,49 @@
 #!/bin/bash
+source env.sh
 set -xe
+
 [ -d scheme-compiler ] || git clone https://github.com/taimoon/scheme-compiler
-cppcheck --check-level=exhaustive *.c *.h
-gcc -O2 -fno-omit-frame-pointer -g -Wall -rdynamic interp.c main.c -o interp.out
-diff <(SCM_BOOT="test/test-macro.scm" ./interp.out) "test/test-macro.txt"
-diff <(SCM_BOOT="test/test-callcc.scm" ./interp.out) "test/test-callcc.txt"
-diff <(SCM_BOOT="test/test-gc.scm" ./interp.out) "test/test-gc.txt"
-diff <(SCM_BOOT="test/test-callcc-tail.scm" ./interp.out) "test/test-callcc-tail.txt"
-diff <(SCM_BOOT="test/test-vector.scm" ./interp.out) "test/test-vector.txt"
-time RIDER=KICK SCM_BOOT="kernel.scm" ./interp.out -E kernel-rider.scm kernel.scm
-time SCM_BOOT="kernel-rider.scm" ./interp.out -E kernel-exp.scm kernel.scm
+[ -d pico ] || bash pico_setup.sh
+
+
+make clean
+make all
+
+# make interpreter for pico
+[ -d build ] || mkdir build || pushd build || cmake .. || popd
+pushd build
+make -j
+popd
+
+# test
+diff <(BATCH_MODE= LOUD_MODE= ./interp.out test/test-0.scm) test/test-0.txt
+time BATCH_MODE= make test
+HEAP_SIZE=$(echo "print(8 * (1 << 20))" | python3)
+time RIDER=KICK SCM_BOOT=kernel.scm HEAP_SIZE=${HEAP_SIZE} BATCH_MODE= ./interp.out -E kernel-rider.scm kernel.scm
+time SCM_BOOT=kernel-rider.scm HEAP_SIZE=${HEAP_SIZE} BATCH_MODE= ./interp.out -E kernel-exp.scm kernel.scm
 
 cp kernel-rider.scm scheme-compiler     # to preprocess compiler
 cp kernel-exp.scm scheme-compiler       # required by compat.scm
-cp interp.out scheme-compiler
-
+cp scheme-compiler-compat.scm scheme-compiler
 pushd scheme-compiler
+git checkout v0.3.1
 make clean
 cp ../interp.out .
-SCM_BOOT="kernel-rider.scm" ./interp.out -E compiler-impl.scm \
+source env.sh
+export BATCH_MODE=
+export HEAP_SIZE=$(echo "print(256 * (1 << 20))" | python3)
+time SCM_BOOT="kernel-rider.scm" ./interp.out -E compiler-impl.scm \
     lib/scheme-libs.scm \
     lib/set.scm \
     lib/utils.scm \
     front.scm \
     compiler-amd64.scm \
     compiler-rider-amd64.scm
-SCM_BOOT="kernel-rider.scm" ./interp.out -E compiler.scm ../compat.scm
-source env.sh
+time SCM_BOOT="kernel-rider.scm" ./interp.out -E compiler.scm scheme-compiler-compat.scm
 make make_runtime SCM_RUNTIME=runtime.so TARGET_ARCH=amd64
 export SCM_RUNTIME=runtime.so
 export SCM_BOOT=compiler.scm
-FOREIGN_IO=TRUE PRIM_CALLCC=TRUE ./interp.out -o ./a.out test/test-let.scm
+time FOREIGN_IO=TRUE PRIM_CALLCC=TRUE ./interp.out -o ./a.out test/test-let.scm
 time ./a.out
 time make bootstrap_3 TARGET_ARCH=amd64 BOOTSTRAP_TEST=0 SCM_CC="./interp.out" SCM_NCC="./compile-amd64.out"
 popd

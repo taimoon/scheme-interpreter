@@ -1,2 +1,6 @@
+*.elf
+*.o
+*.bin
 .vscode
+build/
 *.out
