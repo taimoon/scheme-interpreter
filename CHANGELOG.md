@@ -1,4 +1,4 @@
-# 2026-06-23
+# 2026-05-23
 
 - Naive REPL
 - Full support for call/cc and values
