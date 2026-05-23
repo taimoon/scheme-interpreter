@@ -1,0 +1,15 @@
+diff --git a/src/host/pico_platform/include/pico/platform.h b/src/host/pico_platform/include/pico/platform.h
+index 0338354e..ceb07e33 100644
+--- a/src/host/pico_platform/include/pico/platform.h
++++ b/src/host/pico_platform/include/pico/platform.h
+@@ -52,8 +52,8 @@ extern void tight_loop_contents();
+ #define __noreturn __attribute((noreturn))
+ #endif
+ 
+-#ifndef __unused
+-#define __unused __attribute__((unused))
++#ifndef __GNUC_UNUSED
++#define __GNUC_UNUSED __attribute__((unused))
+ #endif
+ 
+ #ifndef __noinline

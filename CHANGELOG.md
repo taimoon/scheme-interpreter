@@ -1,3 +1,10 @@
+# 2026-06-23
+
+- Naive REPL
+- Full support for call/cc and values
+- Use the same runtime as scheme compiler
+- The interpreter now run on rp2040 zero.
+
 # 2025-12-21
 
 Currently, the interpreter can bootstrap the scheme compiler v0.3.1 and pass bootstrapping test on Linux Fedora, x86 CPU.

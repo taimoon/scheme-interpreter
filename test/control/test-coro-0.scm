@@ -1,0 +1,31 @@
+(let ()
+(define (make-coroutine-generator proc)
+  ; proc is a procedure that takes one argument, yield.
+  (define resume #f)
+  (define return #f)
+  (define yield
+    (lambda (v)
+      (call/cc (lambda (r) (set! resume r) (return v)))))
+  (define (coro)
+    (call/cc (lambda (cc)
+      (set! return cc)
+      (if (not resume)
+          (begin
+            (proc yield)
+            (set! coro (lambda () (eof-object)))
+            (return (eof-object)))
+          (resume 0)))))
+  (lambda () (coro)))
+
+(define gen (make-coroutine-generator (lambda (yield)
+  (yield 0)
+  (yield #\f)
+  (yield #\t)
+  (yield (cons #t (cons #f '()))))))
+
+(define (writeln x) (write x) (newline))
+(writeln (gen))
+(writeln (gen))
+(writeln (gen))
+(writeln (gen))
+)

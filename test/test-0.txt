@@ -1,0 +1,62 @@
+> (cons 1 (quote ()))
+(1)
+> (+ 1 2)
+3
+> (quote ((lambda (x y) (+ (* x x) (* y y))) 3 4))
+((lambda (x y) (+ (* x x) (* y y))) 3 4)
+> (quote (something))
+(something)
+> ((lambda x x) 1 2 3)
+(1 2 3)
+> ((lambda (x y) (+ x y)) 1 2)
+3
+> (define sum-iter (lambda (n s) (if (<= n 0) s (sum-iter (- n 1) (+ s n)))))
+> (set! fib (lambda (n) (if (<= n 1) n (+ (fib (- n 1)) (fib (- n 2))))))
+> (fib 20)
+6765
+> (define list (lambda x x))
+> (begin (writeln (sum-iter 100 0)) (writeln (sum-iter 1000 0)) (writeln (sum-iter 10000 0)))
+5050
+500500
+50005000
+> (if #t (quote true) (quote false))
+true
+> (if #f (quote true) (quote false))
+false
+> (define fact (lambda (n) (if (<= n 1) 1 (* n (fact (- n 1))))))
+> (fact 10)
+3628800
+> (define (map f xs) (if (null? xs) (quote ()) (cons (f (car xs)) (map f (cdr xs)))))
+> (define (rep f n) (if (<= n 0) (f) (begin (f) (rep f (- n 1)))))
+> (rep (lambda _ (writeln (quote yay!))) 10)
+yay!
+yay!
+yay!
+yay!
+yay!
+yay!
+yay!
+yay!
+yay!
+yay!
+yay!
+> (map (lambda (x) (* x x)) (quote (2 3 4)))
+(4 9 16)
+> (define odd? (if #f #f))
+> (define even? (if #f #f))
+> (define (test) (define (odd? x) (if (<= x 0) #f (even? (- x 1)))) (define (even? x) (if (<= x 0) #t (odd? (- x 1)))) (writeln (odd? 3)) (writeln (even? 3)))
+> (test)
+#t
+#f
+> (define (test) (eval (quote (set! test (quote long-gone)))))
+> (test)
+> test
+long-gone
+> even?
+> odd?
+> (defmacro (and x y) (list (quote if) x y #f))
+> (and #f undefined)
+#f
+> (apply + (quote (2 3)))
+5
+> (exit)

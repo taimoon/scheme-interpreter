@@ -1,3 +1,6 @@
+free-standing?
+hosted?
+
 (define uniquify-methods '())
 
 (define (uniquify-methods-add! kw p)
@@ -264,22 +267,32 @@
         (cons (bytevector-u8-ref bv i) (recur (add1 i)))
         '())))
 
-(define (%make-foreign-procedure fn argc)
-  (vector-ref
-    (vector
-      (lambda () (foreign-call fn (vector)))
-      (lambda (v0) (foreign-call fn (vector v0)))
-      (lambda (v0 v1) (foreign-call fn (vector v0 v1)))
-      (lambda (v0 v1 v2) (foreign-call fn (vector v0 v1 v2)))
-      (lambda (v0 v1 v2 v3) (foreign-call fn (vector v0 v1 v2 v3)))
-      (lambda (v0 v1 v2 v3 v4) (foreign-call fn (vector v0 v1 v2 v3 v4)))
-      (lambda (v0 v1 v2 v3 v4 v5) (foreign-call fn (vector v0 v1 v2 v3 v4 v5))))
-    argc))
+(define-macro (cond-include pred . es)
+  (if (eval pred)
+      (cons 'begin es)
+      0))
 
-(define-macro (make-foreign-procedure fn argc)
-  ((lambda x x) '%make-foreign-procedure (%string->utf8 (symbol->string fn) #t) argc))
+(cond-include hosted?
+  (define (%make-foreign-procedure fn argc)
+    (vector-ref
+      (vector
+        (lambda () (foreign-call fn (vector)))
+        (lambda (v0) (foreign-call fn (vector v0)))
+        (lambda (v0 v1) (foreign-call fn (vector v0 v1)))
+        (lambda (v0 v1 v2) (foreign-call fn (vector v0 v1 v2)))
+        (lambda (v0 v1 v2 v3) (foreign-call fn (vector v0 v1 v2 v3)))
+        (lambda (v0 v1 v2 v3 v4) (foreign-call fn (vector v0 v1 v2 v3 v4)))
+        (lambda (v0 v1 v2 v3 v4 v5) (foreign-call fn (vector v0 v1 v2 v3 v4 v5))))
+      argc))
 
-(define abort (make-foreign-procedure abort 0))
+  (define-macro (make-foreign-procedure fn argc)
+    ((lambda x x) '%make-foreign-procedure (%string->utf8 (symbol->string fn) #t) argc)))
+
+(cond-include hosted?
+  (define abort (make-foreign-procedure abort 0)))
+
+(cond-include free-standing?
+  (define abort (exit -1)))
 
 (define error
   (let ((write write)
@@ -391,7 +404,11 @@
     ((not (pair? xs)) (error "extend-env" "ill-form" xs vs))
     (else
      (cons (list (car xs) (car vs)) (extend-env (cdr xs) (cdr vs) env)))))
-(define assq (make-foreign-procedure s_assq 2))
+(define (assq x xs)
+  (cond
+    ((null? xs) #f)
+    ((eq? x (caar xs)) (car xs))
+    (else (assq x (cdr xs)))))
 (define (maybe-apply-env x env) (assq x env))
 (define (make-env) '())
 (define (make-begin es) (if (pair? (cdr es)) (cons 'begin es) (car es)))
@@ -457,56 +474,51 @@
 (eval (uniquify* uniquify-prog))
 ((eval (uniquify* install-macros-prog)))
 
-(define fwrite (make-foreign-procedure s_fwrite 4))
-
-(define fread (make-foreign-procedure s_fread 4))
-
-(define writeln
-  (case-lambda
-    ((x) (writeln x stdout))
-    ((x op) (write x op) (newline op))))
-
-(define fopen
-  (let ((fopen (make-foreign-procedure s_fopen 2)))
-    (lambda (path mode)
-      (fopen (%string->utf8 path #t) (%string->utf8 mode #t)))))
-
-(define fclose (make-foreign-procedure s_fclose 1))
-
-(define getenv
-  (let ((getenv (make-foreign-procedure s_getenv 1)))
-    (lambda (var)
-      (let ((r (getenv (%string->utf8 var #t))))
-        (if r
-            (utf8->string r)
-            r)))))
-
-(define setenv
-  (let ((setenv (make-foreign-procedure s_setenv 2)))
-    (lambda (var val)
-      (setenv (%string->utf8 var #t) (%string->utf8 val #t)))))
+(define eval (let ((eval eval)) (lambda (e) (eval (uniquify* e)))))
 
 (define eof-object (let ((eof eof)) (lambda () eof)))
 (define eof-object? (let ((eof eof)) (lambda (v) (eq? eof v))))
+(define (void) (if #f #f))
 
-(define (read-sexps-from-path path)
-  (define ip (fopen path "r"))
-  (define (recur e)
-    (if (eof-object? e)
-        '()
-        (cons e (recur (read ip)))))
-  (let ((v (recur (read ip))))
-    (fclose ip)
-    v))
+(cond-include hosted?
+  (define fwrite (make-foreign-procedure s_sys_fwrite 4))
 
-(define eval (let ((eval eval)) (lambda (e) (eval (uniquify* e)))))
+  (define fread (make-foreign-procedure s_sys_fread 4))
 
-(define load
-  (lambda (path)
-    (eval (make-begin (map uniquify* (read-sexps-from-path path))))))
+  (define fopen
+    (let ((fopen (make-foreign-procedure s_sys_fopen 2)))
+      (lambda (path mode)
+        (fopen (%string->utf8 path #t) (%string->utf8 mode #t)))))
 
-(define-macro (include path)
-  (uniquify* (make-begin (read-sexps-from-path path))))
+  (define fclose (make-foreign-procedure s_sys_fclose 1))
+
+  (define getenv
+    (let ((getenv (make-foreign-procedure s_sys_getenv 1)))
+      (lambda (var)
+        (let ((r (getenv (%string->utf8 var #t))))
+          (if r
+              (utf8->string r)
+              r)))))
+
+  (define setenv
+    (let ((setenv (make-foreign-procedure s_sys_setenv 2)))
+      (lambda (var val)
+        (setenv (%string->utf8 var #t) (%string->utf8 val #t)))))
+  
+  (define parse-file
+    (let ((parse-file (make-foreign-procedure _parse_file 1)))
+      (lambda (path)
+        (parse-file (%string->utf8 path #t)))))
+
+  (define (read-sexps-from-path path) (parse-file path))
+      
+  (define load
+    (lambda (path)
+      (eval (make-begin (map uniquify* (read-sexps-from-path path))))))
+  
+  (define-macro (include path)
+    (uniquify* (make-begin (read-sexps-from-path path))))
+)
 
 (define (vector-equal? v w)
   (cond
@@ -582,7 +594,7 @@
 ))
 
 (define system
-  (let ((system (make-foreign-procedure s_system 1)))
+  (let ((system (make-foreign-procedure s_sys_system 1)))
     (lambda (cmd) (system (%string->utf8 cmd #t)))))
 
 (define (simplify-bytevector e)
@@ -595,13 +607,8 @@
            (simplify-bytevector (cdr e))))
     (else e)))
 
-(define get-process-id (make-foreign-procedure s_getpid 0))
+(define get-process-id (make-foreign-procedure s_sys_getpid 0))
 (define-macro (import . _) 0)
-
-(define-macro (cond-include pred e)
-  (if (eval pred)
-      e
-      0))
 
 (define-macro (let-values bs . es)
   (if (not (= 1 (length bs)))
