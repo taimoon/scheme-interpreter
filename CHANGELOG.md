@@ -1,6 +1,6 @@
 # 2026-06-14
 
-version: v0.4.0
+version : v0.4
 
 - add bignum constructor and accessor
 - support word-size arithemtic
@@ -12,7 +12,7 @@ version: v0.4.0
 
 version : v0.3
 
-commit  : 1de4849acaa9de27898b5af2cf53f6bcf3166eba
+commit  : 842ce6f128f3ff57d1dd7d6dc5cc8db511d8bdfb
 
 - Naive REPL
 - Full support for call/cc and values
