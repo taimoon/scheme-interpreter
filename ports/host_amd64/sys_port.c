@@ -1,9 +1,14 @@
 #include "sys_port.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 void _s_print_int(intptr_t d) {
-    printf("%d", d);
+    printf("%"PRIdPTR"", d);
+}
+
+void _s_print_uint(uintptr_t u) {
+    printf("%"PRIuPTR"", u);
 }
 
 void _s_putc(int c) {

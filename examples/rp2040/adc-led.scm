@@ -1,0 +1,17 @@
+(define (mid x y) (ash (+ x y) -1))
+
+(define (adc+led-tes pin times)
+  (gpio-init pin)
+  (let loop ((i times))
+    (define (read-on-ms)
+      (max (div (ash (mid (read-adc 0) (read-adc 0)) 9) 4095) 10))
+    (if (> i 0)
+        (let ((on-ms (read-on-ms)))
+          (writeln (list i on-ms))
+          (gpio-on pin)
+          (delay-us (ms->us on-ms))
+          (gpio-off pin)
+          (delay-us (ms->us on-ms))
+          (loop (- i 1))))))
+
+(adc+led-tes 2 500)

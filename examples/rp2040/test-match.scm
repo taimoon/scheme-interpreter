@@ -1,0 +1,15 @@
+(define (interp e)
+  (match e
+    (,e
+     (guard (integer? e))
+     e)
+    ((+ ,e1 ,e2)
+     (+ (interp e1) (interp e2)))
+    ((* ,e1 ,e2)
+     (* (interp e1) (interp e2)))
+    (,() 0)))
+(define (rep f n)
+  (let loop ((n n))
+    (if (> n 0)
+        (begin (f) (loop (- n 1))))))
+(rep (lambda () (writeln (interp '(+ (* 3 3) (* 4 4))))) 10)

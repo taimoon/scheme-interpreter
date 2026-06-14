@@ -14,6 +14,8 @@ size_t strlen(const char* s);
 
 void _s_print_int(intptr_t d);
 
+void _s_print_uint(uintptr_t u);
+
 void _s_putc(int c);
 
 void _s_puts(const char* s);

@@ -29,3 +29,6 @@
 
 (write (eq? (mod 10 3) 1)) (newline)
 (write (eq? (div 10 3) 3)) (newline)
+(write (ash 1 3)) (newline)
+(write (ash 8 -3)) (newline)
+(write (eq? (ash (ash 8 3) -3) 8)) (newline)

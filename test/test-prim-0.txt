@@ -9,3 +9,6 @@ string->symbol
 #t#t
 #t
 #t
+8
+1
+#t

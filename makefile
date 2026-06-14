@@ -1,7 +1,8 @@
 SCM := ./interp.out
-LIB := lib.scm
+LIB := test/lib.scm
 TESTS := \
 	test/test-prim-0.scm \
+	test/test-wordnum.scm \
 	test/test-str-0.scm \
 	test/test-vec.scm \
 	test/test-bytevec.scm \
@@ -42,7 +43,7 @@ _TESTS :=  $(_TST_DUMMY_TGT_0)
 $(_TST_DUMMY_TGT_0) : %$(_TST_DUMMY_EXT_0) : $(SCM) $(LIB) %.scm %.txt
 	diff <($(SCM) $(LIB) $*.scm) $*.txt
 
-SCM_CFG=-DSCM_HOSTED=1 -DSCM_UTF32=1
+SCM_CFG=-DSCM_HOSTED=1 -DSCM_UTF32=0
 CFLAGS=-O3
 
 .PHONY: test

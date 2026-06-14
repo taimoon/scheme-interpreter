@@ -47,3 +47,6 @@
   (cond-clauses->ifs (cons clause clauses)))
 (define values (lambda vs (call/cc (lambda (k) (apply k vs)))))
 (define eof-object (let ((eof eof)) (lambda () eof)))
+(define (fixnum-width) %fixnum-width)
+(define (greatest-fixnum) %greatest-fixnum)
+(define (least-fixnum) %least-fixnum)

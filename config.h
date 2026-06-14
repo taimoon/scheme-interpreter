@@ -28,3 +28,12 @@
 #error "PICO_BOARD requires a freestanding (non-hosted) C environment"
 #endif
 #endif
+
+#include <stdint.h>
+#if UINTPTR_MAX == UINT32_MAX
+#define SCM_NATIVE_WIDTH    32
+#elif UINTPTR_MAX == UINT64_MAX
+#define SCM_NATIVE_WIDTH    64
+#else
+#error "Unknown native width"
+#endif

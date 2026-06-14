@@ -1,5 +1,7 @@
 free-standing?
 hosted?
+unicode-support?
+boot?
 
 (define uniquify-methods '())
 
@@ -11,7 +13,18 @@ hosted?
   (set! uniquify-methods
         (cons (cons kw (cons 'macro p)) uniquify-methods)))
 
-(define install-macros-prog '(lambda ()
+(defmacro (define/source name hdr . es)
+  (define (list . x) x)
+  (if (symbol? hdr)
+      (if boot?
+          (list 'begin
+                (list 'define name (list 'quote (car es)))
+                (list 'define hdr (list 'eval name)))
+          (list 'define hdr (car es)))
+      (list 'define/source name (car hdr) (cons 'lambda (cons (cdr hdr) es)))))
+
+(define/source install-macros-prog install-macros
+(lambda ()
   (define list (lambda x x))
   (define caar (lambda (x) (car (car x))))
   (define cadr (lambda (p) (car (cdr p))))
@@ -163,7 +176,7 @@ hosted?
         (cons 'lambda clause)))
 ))
 
-((eval install-macros-prog))
+(install-macros)
 
 (define apply
   (let ((apply apply))
@@ -176,16 +189,39 @@ hosted?
 
 (define values (lambda vs (call/cc (lambda (k) (apply k vs)))))
 
-(define (list->vector xs)
-  (let recur ((i 0) (xs xs))
-    (if (pair? xs)
-        (let ((v (recur (+ i 1) (cdr xs))))
-          (vector-set! v i (car xs))
-          v)
-        (make-vector i))))
+(define (integer? e) (if (fixnum? e) #t (bignum? e)))
+(define (not x) (eq? x #f))
+(define (null? x) (eq? x '()))
+(define eof-object (let ((eof eof)) (lambda () eof)))
+(define eof-object? (let ((eof eof)) (lambda (v) (eq? eof v))))
+(define (void) (if #f #f))
 
-(define (vector . xs) (list->vector xs))
+(define-macro (cond-eval pred . es)
+  (if (eval pred)
+      (cons 'begin es)
+      0))
 
+(define (%ascii->utf8 s null-term?)
+  (let loop ((i 0)
+             (buf (make-bytevector (+ (string-length s) (if null-term? 1 0)) 0)))
+    (if (>= i (string-length s))
+        buf
+        (begin
+          (bytevector-u8-set! buf i (char->integer (string-ref s i)))
+          (loop (+ i 1) buf)))))
+
+(cond-eval (not unicode-support?)
+  (define %string->utf8 %ascii->utf8)
+  (define (%utf32->utf8! c32 buf off)
+    (let ((c32 (char->integer c32)))
+      (cond
+        ((<= c32 #x7F)
+          (bytevector-u8-set! buf (+ off 0) c32)
+          1)
+        (else 0))))
+)
+
+(cond-eval unicode-support?
 (define (%utf32->utf8! c32 buf off)
   (let ((c32 (char->integer c32)))
     (cond
@@ -247,6 +283,7 @@ hosted?
                 (+ j (%utf32->utf8! (string-ref s i) buf j))
                 buf))))
   %string->utf8))
+)
 
 (define (string->utf8 s)
   (%string->utf8 s #f))
@@ -267,12 +304,17 @@ hosted?
         (cons (bytevector-u8-ref bv i) (recur (add1 i)))
         '())))
 
-(define-macro (cond-include pred . es)
-  (if (eval pred)
-      (cons 'begin es)
-      0))
+(define (list->vector xs)
+  (let recur ((i 0) (xs xs))
+    (if (pair? xs)
+        (let ((v (recur (+ i 1) (cdr xs))))
+          (vector-set! v i (car xs))
+          v)
+        (make-vector i))))
 
-(cond-include hosted?
+(define (vector . xs) (list->vector xs))
+
+(cond-eval hosted?
   (define (%make-foreign-procedure fn argc)
     (vector-ref
       (vector
@@ -288,11 +330,11 @@ hosted?
   (define-macro (make-foreign-procedure fn argc)
     ((lambda x x) '%make-foreign-procedure (%string->utf8 (symbol->string fn) #t) argc)))
 
-(cond-include hosted?
+(cond-eval hosted?
   (define abort (make-foreign-procedure abort 0)))
 
-(cond-include free-standing?
-  (define abort (exit -1)))
+(cond-eval free-standing?
+  (define abort (lambda () (exit -1))))
 
 (define error
   (let ((write write)
@@ -303,13 +345,6 @@ hosted?
       (newline stderr)
       (abort))))
 
-(define (not x) (if x #f #t))
-(define (null? x) (eq? x '()))
-(define (append xs ys)
-  (if (pair? xs)
-      (cons (car xs) (append (cdr xs) ys))
-      ys))
-(define (list . x) x)
 ;;;; cxr
 (define caar (lambda (x) (car (car x))))
 (define caaar (lambda (x) (car (car (car x)))))
@@ -340,6 +375,10 @@ hosted?
 (define cadddr (lambda (x) (car (cdr (cdr (cdr x))))))
 (define cddddr (lambda (x) (cdr (cdr (cdr (cdr x))))))
 
+(define (append xs ys)
+  (if (pair? xs)
+      (cons (car xs) (append (cdr xs) ys))
+      ys))
 (define gensym
   (let ()
     (define (abs x) (if (< x 0) (- x) x))
@@ -397,6 +436,7 @@ hosted?
               (number->string counter))))))
     %gensym))
 
+(define list (lambda x x))
 (define (extend-env xs vs env)
   (cond
     ((null? xs) env)
@@ -420,8 +460,15 @@ hosted?
           '()
           (uniquify es env))))
 
-(define uniquify-prog '
-(define (uniquify e env)
+(define-macro (define/source name hdr . es)
+  (if (symbol? hdr)
+      (if boot?
+          `(begin (define ,name ',(car es))
+                  (define ,hdr (eval ,name)))
+          `(define ,hdr ,(car es)))
+      `(define/source ,name ,(car hdr) (lambda ,(cdr hdr) . ,es))))
+
+(define/source uniquify-prog (uniquify e env)
   (cond
     ((symbol? e)
      (let ((r (maybe-apply-env e env)))
@@ -438,7 +485,6 @@ hosted?
        (uniquify (apply (cddr r) (cdr e)) env))
       (else (uniquify-each e env))))
     (else (uniquify-each e env))))
-)
 
 (define (uniquify* e)
   (uniquify e uniquify-methods))
@@ -470,17 +516,48 @@ hosted?
         (list 'defmacro var (uniquify (car val) (extend-env var var env)))
         (uniquify (list 'defmacro (car var) (list 'lambda (cdr var) (make-begin val))) env))))
 
-(eval uniquify-prog)
-(eval (uniquify* uniquify-prog))
-((eval (uniquify* install-macros-prog)))
-
 (define eval (let ((eval eval)) (lambda (e) (eval (uniquify* e)))))
 
-(define eof-object (let ((eof eof)) (lambda () eof)))
-(define eof-object? (let ((eof eof)) (lambda (v) (eq? eof v))))
-(define (void) (if #f #f))
+(if boot? (begin (eval uniquify-prog) ((eval install-macros-prog))))
 
-(cond-include hosted?
+(define (vector=? v w)
+  (cond
+    ((eq? v w) #t)
+    ((not (= (vector-length v) (vector-length w))) #f)
+    (else
+      (let loop ((i 0))
+        (if (>= i (vector-length v))
+            #t
+            (and
+              (equal? (vector-ref v i) (vector-ref w i))
+              (loop (add1 i))))))))
+(define (string=? s1 s2)
+  (and
+    (string? s1)
+    (string? s2)
+    (or
+      (eq? s1 s2)
+      (and
+        (= (string-length s1) (string-length s2))
+        (let loop ((i 0))
+             (cond
+               ((eq? i (string-length s1))
+                 #t)
+               ((eq? (string-ref s1 i) (string-ref s2 i))
+                 (loop (add1 i)))
+               (else #f)))))))
+(define (equal? x y)
+  (cond ((eq? x y) #t)
+        ((and (pair? x) (pair? y))
+         (and (equal? (car x) (car y))
+              (equal? (cdr x) (cdr y))))
+        ((and (vector? x) (vector? y))
+         (vector=? x y))
+        ((and (string? x) (string? y))
+         (string=? x y))
+        (else #f)))
+
+(cond-eval hosted?
   (define fwrite (make-foreign-procedure s_sys_fwrite 4))
 
   (define fread (make-foreign-procedure s_sys_fread 4))
@@ -518,53 +595,21 @@ hosted?
   
   (define-macro (include path)
     (uniquify* (make-begin (read-sexps-from-path path))))
-)
-
-(define (vector-equal? v w)
-  (cond
-    ((eq? v w) #t)
-    ((not (= (vector-length v) (vector-length w))) #f)
-    (else
-      (let loop ((i 0))
-        (if (>= i (vector-length v))
-            #t
-            (and
-              (equal? (vector-ref v i) (vector-ref w i))
-              (loop (add1 i))))))))
-(define (string=? s1 s2)
-  (and
-    (string? s1)
-    (string? s2)
-    (or
-      (eq? s1 s2)
-      (and
-        (= (string-length s1) (string-length s2))
-        (let loop ((i 0))
-             (cond
-               ((eq? i (string-length s1))
-                 #t)
-               ((eq? (string-ref s1 i) (string-ref s2 i))
-                 (loop (add1 i)))
-               (else #f)))))))
-(define (equal? x y)
-  (cond ((eq? x y) #t)
-        ((and (pair? x) (pair? y))
-         (and (equal? (car x) (car y))
-              (equal? (cdr x) (cdr y))))
-        ((and (vector? x) (vector? y))
-         (vector-equal? x y))
-        ((and (string? x) (string? y))
-         (string=? x y))
-        (else #f)))
+) ;; cond-eval hosted?
 
 (include "lib/match-defmacro.scm")
 (define-macro (match . e) (compile-match (cons 'match e)))
-(include "lib/unicode.scm")
+
+(cond-eval hosted?
 (define (string->list s)
   (let recur ((i 0))
     (if (< i (string-length s))
         (cons (string-ref s i) (recur (+ i 1)))
         '())))
+(include "lib/unicode.scm")
+(define (abs x) (if (< x 0) (- x) x))
+(define (min x y) (if (< x y) x y))
+(define (max x y) (if (< x y) y x))
 (include "lib/scheme-libs.scm")
 (include "lib/reader.scm")
 (define (read-sexps-from-path path)
@@ -578,11 +623,6 @@ hosted?
     v))
 (define (writeln x) (write x) (newline))
 (include "lib/writer.scm")
-
-(define (abs x) (if (< x 0) (- x) x))
-(define (max x y) (if (< x y) y x))
-(define (min x y) (if (< x y) x y))
-
 (define command-line (let ()
   (define (vector->list vs)
     (let iter ((i 0))
@@ -591,23 +631,15 @@ hosted?
           '())))
   (define args (map utf8->string (vector->list ARGS)))
   (lambda () args)
-))
+)) 
 
 (define system
   (let ((system (make-foreign-procedure s_sys_system 1)))
     (lambda (cmd) (system (%string->utf8 cmd #t)))))
 
-(define (simplify-bytevector e)
-  (cond
-    ((bytevector? e)
-     `(bytevector . ,(bytevector->list e)))
-    ((not (pair? e)) e)
-    ((not (eq? (car e) 'quote))
-     (cons (simplify-bytevector (car e))
-           (simplify-bytevector (cdr e))))
-    (else e)))
-
 (define get-process-id (make-foreign-procedure s_sys_getpid 0))
+) ;; cond-eval hosted?
+
 (define-macro (import . _) 0)
 
 (define-macro (let-values bs . es)
@@ -625,14 +657,27 @@ hosted?
         `(let-values (,(car bs)) ,(recur (cdr bs)))
         (make-begin es))))
 
-(cond-include (equal? (getenv "RIDER") "KICK")
+(cond-eval (equal? (getenv "RIDER") "KICK")
+  (define (simplify-bytevector e)
+    (cond
+      ((bytevector? e)
+      `(bytevector . ,(bytevector->list e)))
+      ((not (pair? e)) e)
+      ((not (eq? (car e) 'quote))
+      (cons (simplify-bytevector (car e))
+            (simplify-bytevector (cdr e))))
+      (else e)))
   (match (cdr (command-line))
-    (("-E" ,out . ,inp)
+    ((,opt ,out . ,inp)
+     (guard (or (equal? opt "-E") (equal? opt "-F")))
+     (set! free-standing? (equal? opt "-F"))
+     (set! hosted? (not free-standing?))
+     (set! boot? #f)
      (system (format "rm -f ~a" out))
      (define op (open-output-file out))
      (for-each
       (lambda (inp)
-       (for-each (lambda (e) (writeln (simplify-bytevector (uniquify* e)) op)) (read-sexps-from-path inp)))
+       (for-each (lambda (e) (let ((e (simplify-bytevector (uniquify* e)))) (if (not (integer? e)) (writeln e op)))) (cons '(set! boot? #f) (read-sexps-from-path inp))))
       inp)
      (close-port op))
     ((,inp . ,inps)

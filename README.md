@@ -10,6 +10,8 @@ Another goal is to study baremetal programming by porting the scheme interpreter
 
 For background and development notes, see [CHANGELOG](CHANGELOG.md).
 
+For hacking, see [HACKING](HACKING.md).
+
 # How to use
 
 ## Bootstrapping
@@ -24,15 +26,14 @@ BATCH_MODE= RIDER=KICK SCM_BOOT="kernel.scm" ./interp.out -E kernel-rider.scm ke
 BATCH_MODE= SCM_BOOT=kernel-rider.scm ./interp.out -E kernel-exp.scm kernel.scm
 BATCH_MODE= SCM_BOOT=kernel-rider.scm ./interp.out -E a.scm test/test-0.scm
 BATCH_MODE= SCM_BOOT=a.scm ./interp.out
+stty -icanon -echo
 ./interp.out # start in REPL mode
+stty sane
 ```
 
 The `-E <output-file> <input-file> ...` option expands the input Scheme files and concatenates the result into `<output-file>`.
-Generating kernel-rider.scm takes roughly a minute.
+Generating `kernel-rider.scm` takes roughly 10 seconds.
 Here, test.scm is your intended input.
-
-Since `kernel-rider.scm` contains CLI handling and always loads `test.scm`, that you might not want this.
-In that case, you can skip the rider kick, but you must ensure that the interpreter runs the expanded `kernel.scm` first before continuing with your program and for example, you can achieve this by starting your program with `(include "kernel-exp.scm")`.
 
 ## Compiling for Pico
 

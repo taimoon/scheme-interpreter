@@ -1,11 +1,30 @@
+# 2026-06-14
+
+version: v0.4.0
+
+- add bignum constructor and accessor
+- support word-size arithemtic
+- add `%read-mem-32` and `%write-mem-32`
+- add rp2040 hardware manipulation examples
+- add `HACKING.md`
+
 # 2026-05-23
+
+version : v0.3
+
+commit  : 1de4849acaa9de27898b5af2cf53f6bcf3166eba
 
 - Naive REPL
 - Full support for call/cc and values
 - Use the same runtime as scheme compiler
 - The interpreter now run on rp2040 zero.
+- Drop unicode support
 
 # 2025-12-21
+
+version   : v0.2
+
+commit    : 762115b9f4cd7cfccf968d4510bc3de42f33cc0a
 
 Currently, the interpreter can bootstrap the scheme compiler v0.3.1 and pass bootstrapping test on Linux Fedora, x86 CPU.
 

@@ -17,7 +17,8 @@ int repl_getc(void*) {
         while(c < 0) c = getchar();
         // Accept printable ASCII + newline/carriage return
         if ((c >= 0x20 && c <= 0x7E) || c == '\r' || c == '\n') {
-            putchar(c == '\r' ? '\n' : c);
+            c = c == '\r' ? '\n' : c;
+            putchar(c);
             return c;
         }
     }
@@ -52,10 +53,6 @@ int main(int argc, char **argv) {
         Lexer_Stream f = {.getc = file_getc, .ch = PEEKED, .data = fptr};
         for(;;) {
             EXP = s_parse(&f);
-            if(LOUD_MODE) {
-                printf("> ");
-                s_rt_writeln(EXP);
-            }
             if(EXP == EOF_TAG) {
                 ++argi;
                 fclose(fptr);
@@ -66,6 +63,11 @@ int main(int argc, char **argv) {
                     return -1;
                 }
                 f.data = (void*)fptr;
+                continue;
+            }
+            if(LOUD_MODE) {
+                printf("> ");
+                s_rt_writeln(EXP);
             }
             s_eval_entry();
             if(VAL != VOID_TAG && LOUD_MODE) s_rt_writeln(VAL);
