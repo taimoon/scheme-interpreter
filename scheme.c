@@ -264,7 +264,7 @@ void s_pr_bignum_sign();
 
 void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     // 2 * w_sz * n + n * b_sz = (2 * w_sz + b_sz) * n
-    if(!((uintptr_t)heap_start % 8 == 0 && heap_end > heap_start)) panic(__FUNCTION__);
+    if(!((uintptr_t)heap_start % 8 == 0 && heap_end > heap_start)) panic(__func__);
     uintptr_t div_size = 2 * sizeof(word_t) + sizeof(bool);
     uintptr_t heap_size = (uintptr_t)heap_end - (uintptr_t)heap_start;
     heap_size = heap_size - heap_size % (8 * div_size);
@@ -274,7 +274,7 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     tospace_start = fromspace_end;
     tospace_end = tospace_start + HEAP_WORDS;
     gc_markers = (bool*)tospace_end;
-    if(!(((uintptr_t)fromspace_start % 8) == 0 && ((uintptr_t)tospace_start % 8) == 0)) panic(__FUNCTION__);
+    if(!(((uintptr_t)fromspace_start % 8) == 0 && ((uintptr_t)tospace_start % 8) == 0)) panic(__func__);
     for (uintptr_t i = 0; i < HEAP_WORDS; ++i) { gc_markers[i] = false; }
     free_ptr = fromspace_start;
     /* INTEPRETER */
@@ -486,7 +486,7 @@ word_t s_rt_write(word_t v) {
         _s_print_uint(sword.x);
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
     return VOID_TAG;
 }
@@ -498,7 +498,7 @@ word_t s_rt_writeln(word_t v) {
 }
 
 word_t s_obj_int(intptr_t v) {
-    if(!(SCM_INT_MIN <= v && v <= SCM_INT_MAX)) panic(__FUNCTION__);
+    if(!(SCM_INT_MIN <= v && v <= SCM_INT_MAX)) panic(__func__);
     return v << FIXNUM_SHIFT;
 }
 
@@ -511,7 +511,7 @@ word_t s_obj_char(char c) {
 }
 
 word_t s_obj_cons(word_t car, word_t cdr) {
-    if(fromspace_end - free_ptr < 2) panic(__FUNCTION__);
+    if(fromspace_end - free_ptr < 2) panic(__func__);
     word_t *_v = free_ptr;
     free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + 2));
     _v[0] = car;
@@ -560,9 +560,9 @@ word_t s_obj_str_from_buf_alloc(const char *buf, size_t len) {
 }
 
 word_t s_obj_sym(word_t name, word_t hash, word_t val) {
-    if(fromspace_end - free_ptr < 3) panic(__FUNCTION__);
-    if(!s_obj_is_str(name)) panic(__FUNCTION__);
-    if(!((hash & FIXNUM_MASK) == FIXNUM_TAG)) panic(__FUNCTION__);
+    if(fromspace_end - free_ptr < 3) panic(__func__);
+    if(!s_obj_is_str(name)) panic(__func__);
+    if(!((hash & FIXNUM_MASK) == FIXNUM_TAG)) panic(__func__);
     word_t *_v = free_ptr;
     free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + 3));
     _v[0] = UNBOUND_TAG;
@@ -573,8 +573,8 @@ word_t s_obj_sym(word_t name, word_t hash, word_t val) {
 }
 
 word_t s_obj_vec(intptr_t len, word_t x) {
-    if(!(len >= 0)) panic(__FUNCTION__);
-    if((fromspace_end - free_ptr < (len + 1))) panic(__FUNCTION__);
+    if(!(len >= 0)) panic(__func__);
+    if((fromspace_end - free_ptr < (len + 1))) panic(__func__);
     word_t *_w = free_ptr;
     free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + len + 1));
     _w[0] = (len << FIXNUM_SHIFT) | VEC_TAG;
@@ -586,7 +586,7 @@ word_t s_obj_vec(intptr_t len, word_t x) {
 }
 
 word_t s_obj_vec_alloc(intptr_t len, word_t x) {
-    if(!(len >= 0)) panic(__FUNCTION__);
+    if(!(len >= 0)) panic(__func__);
     s_gc((len + 1) * sizeof(word_t));
     return s_obj_vec(len, x);
 }
@@ -606,9 +606,9 @@ word_t s_obj_bytevec(intptr_t len, uint8_t b) {
 
 word_t s_obj_bytevec_alloc(intptr_t len, word_t b) {
     b = s_ffi_to_fixnum(b);
-    if(!(len >= 0)) panic(__FUNCTION__);
+    if(!(len >= 0)) panic(__func__);
     if(!((0 <= b && b <= UINT8_MAX) || (INT8_MIN <= b && b <= INT8_MAX))) {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
     s_gc(len + sizeof(word_t));
     uint8_t v = b & UINT8_MAX;
@@ -627,8 +627,8 @@ word_t s_obj_bytevec_from_buf(const uint8_t *buf) {
 
 word_t s_obj_clos(s_funptr_t fn, word_t fx) {
     intptr_t len = fx >> FIXNUM_SHIFT;
-    if(!(len >= 0)) panic(__FUNCTION__);
-    if((fromspace_end - free_ptr < (len + 2))) panic(__FUNCTION__);
+    if(!(len >= 0)) panic(__func__);
+    if((fromspace_end - free_ptr < (len + 2))) panic(__func__);
     word_t *_w = free_ptr;
     free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + len + 2));
     _w[0] = (word_t)fn;
@@ -645,7 +645,7 @@ word_t s_obj_clos_alloc(s_funptr_t fn, word_t fx) {
 }
 
 word_t s_obj_bignum(word_t limb, word_t sign) {
-    if((fromspace_end - free_ptr < 2)) panic(__FUNCTION__);
+    if((fromspace_end - free_ptr < 2)) panic(__func__);
     intptr_t s = s_ffi_to_fixnum(sign);
     if(!(s == 0 || s == 1)) panic("s_obj_bignum_alloc sign is either 0 or 1");
     s_ffi_to_vec(limb);
@@ -741,7 +741,7 @@ int s_ffi_bignum_sign(word_t v) {
         return (((word_t*)(v - OBJ_TAG))[0] >> BIGNUM_SIGN_SHIFT) & 1;
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 
 }
@@ -751,7 +751,7 @@ word_t s_ffi_bignum_limb(word_t v) {
         return ((word_t*)(v - OBJ_TAG))[1];
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -763,7 +763,7 @@ S_ffi_bytevec_t s_ffi_to_bytevec(word_t v) {
         return (S_ffi_bytevec_t){.bv = bv, .sz = len};
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -775,7 +775,7 @@ S_ffi_vec_t s_ffi_to_vec(word_t v) {
         return (S_ffi_vec_t){.ptr = ptr, .sz = len};
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -787,12 +787,12 @@ S_ffi_str_t s_ffi_to_str(word_t v) {
         return (S_ffi_str_t){.s = ptr, .sz = len};
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
 S_ffi_sym_t s_ffi_to_sym(word_t v) {
-    if((v & PTR_MASK) != SYM_TAG) panic(__FUNCTION__);
+    if((v & PTR_MASK) != SYM_TAG) panic(__func__);
     word_t *ptr = (word_t*)(v - SYM_TAG);
     return (S_ffi_sym_t) {
         .val = ptr,
@@ -802,7 +802,7 @@ S_ffi_sym_t s_ffi_to_sym(word_t v) {
 }
 
 intptr_t s_ffi_to_fixnum(word_t v) {
-    if((v & FIXNUM_MASK) != FIXNUM_TAG) {s_rt_writeln(v); panic(__FUNCTION__);}
+    if((v & FIXNUM_MASK) != FIXNUM_TAG) {s_rt_writeln(v); panic(__func__);}
     return v >> FIXNUM_SHIFT;
 }
 
@@ -817,7 +817,7 @@ S_ffi_sword_t s_ffi_to_sword(word_t v) {
     }
     else if(s_obj_is_bignum(v)) {
         S_ffi_vec_t limb = s_ffi_to_vec(s_ffi_bignum_limb(v));
-        if(limb.sz != 2) {panic(__FUNCTION__);}
+        if(limb.sz != 2) {panic(__func__);}
         word_t *ptr = s_ffi_to_vec(s_ffi_bignum_limb(v)).ptr;
         uintptr_t lo = (uintptr_t)s_ffi_to_fixnum(limb.ptr[0]);
         uintptr_t hi = (uintptr_t)s_ffi_to_fixnum(limb.ptr[1]) << (SCM_NATIVE_WIDTH - FIXNUM_SHIFT - 1);
@@ -825,12 +825,12 @@ S_ffi_sword_t s_ffi_to_sword(word_t v) {
         return (S_ffi_sword_t) {.x = uptr, .sign = s_ffi_bignum_sign(v)};
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
 char s_ffi_to_char(word_t v) {
-    if((v & IMM_MASK) != CHAR_TAG) {s_rt_writeln(v); panic(__FUNCTION__);}
+    if((v & IMM_MASK) != CHAR_TAG) {s_rt_writeln(v); panic(__func__);}
     return v >> IMM_SHIFT;
 }
 
@@ -841,7 +841,7 @@ word_t *s_ffi_from_clos(word_t v) {
         return _s_ffi_from_clos(v);
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -851,7 +851,7 @@ word_t* s_pair_car_ref(word_t v) {
         return ptr;
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -861,7 +861,7 @@ word_t* s_pair_cdr_ref(word_t v) {
         return ptr + 1;
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -1060,7 +1060,7 @@ word_t s_copy(const word_t v) {
         return w;
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -1099,7 +1099,7 @@ static inline void _s_collect_scan_ptr() {
             ptr[1] = s_copy(ptr[1]);
         }
         else{
-            panic(__FUNCTION__);
+            panic(__func__);
         }
     }
 }
@@ -1183,7 +1183,7 @@ int s_lex_getc(Lexer_Stream *f) {
 }
 
 int s_lex_ungetc(char ch, Lexer_Stream *f) {
-    if(f->ch != PEEKED) panic(__FUNCTION__);
+    if(f->ch != PEEKED) panic(__func__);
     f->ch = ch;
     return 0;
 }
@@ -1215,7 +1215,7 @@ bool is_num_char(char c) {
 
 uintptr_t lex_num(Lexer_Stream *fptr, int base) {
     uintptr_t x = 0;
-    char c = s_lex_getc(fptr);
+    int c = s_lex_getc(fptr);
     while(is_num_char(c)) {
         if('0' <= c && c <= '9'){
             c = c - '0';
@@ -1321,7 +1321,7 @@ word_t s_parse_next_token(Lexer_Stream *fptr) {
                         c = '"';
                     }
                     else {
-                        panic(__FUNCTION__);
+                        panic(__func__);
                     }
                 }
                 TOKEN_BUF[i++] = c;
@@ -1345,7 +1345,7 @@ word_t s_parse_next_token(Lexer_Stream *fptr) {
             return s_rt_add_sym_buf(TOKEN_BUF, i);
         }
         else {
-            panic(__FUNCTION__);
+            panic(__func__);
         }
     }
 }
@@ -1411,7 +1411,7 @@ word_t s_parse(Lexer_Stream *fptr) {
         return s_parse_list(fptr);
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -1443,12 +1443,12 @@ void s_apply_clos();
 #define _s_apply_cont ((s_funptr_t)s_ffi_from_clos(CONT)[-2])
 
 void s_cont_macro_val() {
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     NEXT = s_apply_clos;
 }
 
 void s_cont_after_macro() {
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     EXP = VAL;
     ENV = _s_ffi_from_clos(CONT)[1];
     CONT = _s_ffi_from_clos(CONT)[0];
@@ -1471,7 +1471,7 @@ static inline void s_cont_app_nxt() {
 }
 
 void s_cont_app_1() {
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     EXP = s_obj_cons_alloc(VAL, make_nil());
     CDR(_s_ffi_from_clos(CONT)[2]) = EXP;
     _s_ffi_from_clos(CONT)[2] = EXP;
@@ -1479,7 +1479,7 @@ void s_cont_app_1() {
 }
 
 void s_cont_app_0() {
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     if((VAL & PTR_MASK) == CLOS_TAG && _s_ffi_from_clos(VAL)[-2] == (word_t)s_cont_macro_val) {
         PROC = VAL;
         VAL = _s_ffi_from_clos(CONT)[3]; // EXPS
@@ -1500,7 +1500,7 @@ void s_cont_app_0() {
 }
 
 void s_cont_if() {
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     EXP = _s_ffi_from_clos(CONT)[(VAL != FALSE_IMM ? 2 : 3)];
     ENV = _s_ffi_from_clos(CONT)[1];
     CONT = _s_ffi_from_clos(CONT)[0];
@@ -1508,7 +1508,7 @@ void s_cont_if() {
 }
 
 void s_cont_set() {
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     ENV = _s_ffi_from_clos(CONT)[1];
     word_t FORM = _s_ffi_from_clos(CONT)[3];
     PROC = _s_ffi_from_clos(CONT)[2]; // name
@@ -1591,12 +1591,12 @@ void s_eval() {
     _RETC = 1;
     VALS = make_nil();
     if((EXP & FIXNUM_MASK) == FIXNUM_TAG
-        | (EXP & PTR_MASK) == FLO_TAG
-        | (EXP & PTR_MASK) == IMM_TAG
-        | s_obj_is_bignum(EXP)
-        | s_obj_is_str(EXP)
-        | s_obj_is_vec(EXP)
-        | s_obj_is_bytevec(EXP)) {
+        || (EXP & PTR_MASK) == FLO_TAG
+        || (EXP & PTR_MASK) == IMM_TAG
+        || s_obj_is_bignum(EXP)
+        || s_obj_is_str(EXP)
+        || s_obj_is_vec(EXP)
+        || s_obj_is_bytevec(EXP)) {
         VAL = EXP;
         NEXT = _s_apply_cont;
     }
@@ -1610,7 +1610,7 @@ void s_eval() {
         s_rt_writeln(EXP);
         panic("unknown form!");
     }
-    else if(CAR(EXP) == DEFINE | CAR(EXP) == SET_BANG | CAR(EXP) == DEFMACRO) {
+    else if(CAR(EXP) == DEFINE || CAR(EXP) == SET_BANG || CAR(EXP) == DEFMACRO) {
         VAL = s_obj_clos_alloc(s_cont_set, s_obj_int(4));
         // (def var val)
         if((CADR(EXP) & PTR_MASK) == SYM_TAG) {
@@ -1679,7 +1679,7 @@ void s_eval() {
     }
 }
 
-void s_cont_end() { panic(__FUNCTION__); }
+void s_cont_end() { panic(__func__); }
 
 word_t s_eval_entry() {
     CONT = s_obj_clos_alloc(s_cont_end, s_obj_int(0));
@@ -1694,7 +1694,7 @@ word_t s_eval_entry() {
         NEXT = s_eval;
     }
     for(;NEXT != s_cont_end;) NEXT();
-    if(_RETC != 1) panic(__FUNCTION__);
+    if(_RETC != 1) panic(__func__);
     ENV = make_nil();
     return VAL;
 }
@@ -1780,7 +1780,7 @@ void s_pr_write_mem_32() {
     _RETC = 1;
     S_ffi_sword_t addr = s_ffi_to_sword(CAR(VAL));
     S_ffi_sword_t val = s_ffi_to_sword(CADR(VAL));
-    if(addr.sign != 0) panic(__FUNCTION__);
+    if(addr.sign != 0) panic(__func__);
     *(volatile uint32_t*)addr.x = (uint32_t)val.x;
     VAL = VOID_TAG;
     NEXT = _s_apply_cont;
@@ -1959,7 +1959,7 @@ S_ffi_sword_t s_sword_complementize(S_ffi_sword_t v) {
         return (S_ffi_sword_t){.x = -v.x, .sign = 1};
     }
     else {
-        panic(__FUNCTION__);
+        panic(__func__);
     }
 }
 
@@ -2095,7 +2095,7 @@ void s_pr_char_pred() {
 
 void s_pr_char2int() {
     _RETC = 1;
-    if(CAR(VAL) & IMM_MASK != CHAR_TAG) panic(__FUNCTION__);
+    if(CAR(VAL) & IMM_MASK != CHAR_TAG) panic(__func__);
     VAL = (CAR(VAL) >> (IMM_SHIFT - FIXNUM_SHIFT));
     NEXT = _s_apply_cont;
 }
@@ -2387,7 +2387,7 @@ word_t _parse_file(word_t _path) {
     S_ffi_bytevec_t path = s_ffi_to_bytevec(_path);
     assert(path.bv[path.sz - 1] == '\0');
     FILE *fp = fopen(path.bv, "r");
-    if(fp == NULL) panic(__FUNCTION__);
+    if(fp == NULL) panic(__func__);
     Lexer_Stream f = {.getc = _file_getc, .ch = PEEKED, .data = fp};
     word_t exps = s_parse_all(&f);
     fclose(fp);

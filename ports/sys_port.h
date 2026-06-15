@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 #ifndef assert
-#define assert(expr) ((expr) ? (void)(0) : panic(__FUNCTION__))
+#define assert(expr) ((expr) ? (void)(0) : panic(__func__))
 #endif
 
 void panic(const char *msg, ...);
