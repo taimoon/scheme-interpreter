@@ -52,15 +52,17 @@ typedef intptr_t word_t;
 
 #define CLOS_MASK           PTR_MASK
 #define PAIR_MASK           PTR_MASK
-#define OBJ_MASK            0b111
-#define VEC_TAG             0b000
-#define BYTEVEC_TAG         0b001
-#define STR_TAG             0b010
-#define OTH_TAG             0b011
-#define BIGNUM_TAG          0b0011
-#define BIGNUM_POS_TAG      0b0011
-#define BIGNUM_NEG_TAG      0b1011
+#define OBJ_MASK                 0b111
+#define VEC_TAG                  0b000
+#define BYTEVEC_TAG              0b001
+#define STR_TAG                  0b010
+#define OTH_TAG                  0b011
+#define OTH_MASK            0b11111111
+#define BIGNUM_TAG               0b011
+#define BIGNUM_POS_TAG      0b00000011
+#define BIGNUM_NEG_TAG      0b00001011
 #define BIGNUM_SIGN_SHIFT   3
+#define EPHEMERON_TAG       0b00000111
 #define STR_MASK            FIXNUM_MASK
 #define VEC_MASK            FIXNUM_MASK
 #define BYTEVEC_MASK        FIXNUM_MASK
@@ -78,6 +80,7 @@ typedef struct S_ffi_str_t { size_t sz; char *s; } S_ffi_str_t;
 typedef struct S_ffi_bytevec_t { size_t sz; uint8_t *bv; } S_ffi_bytevec_t;
 typedef struct S_ffi_vec_t { size_t sz; word_t *ptr; } S_ffi_vec_t;
 typedef struct S_ffi_sym_t { word_t *val; word_t hash; word_t name; } S_ffi_sym_t;
+// 0 - non-negative, 1 - negative
 typedef struct S_ffi_sword_t { uintptr_t x; int sign; } S_ffi_sword_t;
 
 #define make_nil() NIL_TAG
@@ -105,6 +108,8 @@ word_t DEFINE;
 word_t DEFMACRO;
 word_t TEMPS[8];
 word_t *TEMP_SP;
+word_t EPHEMERON_LIST;
+word_t GUARDIAN_LIST;
 intptr_t _RETC;
 
 #define TEMP_PUSH(v) do { *TEMP_SP++ = v; } while(0)
@@ -126,10 +131,12 @@ word_t s_ffi_bignum_limb(word_t v);
 
 bool s_obj_is_fixnum(word_t v);
 bool s_obj_is_pair(word_t v);
+bool s_obj_is_sym(word_t v);
 bool s_obj_is_vec(word_t v);
 bool s_obj_is_bytevec(word_t v);
 bool s_obj_is_str(word_t v);
 bool s_obj_is_bignum(word_t v);
+bool s_obj_is_ephemeron(word_t v);
 
 word_t s_obj_int(intptr_t v);
 word_t s_obj_tok(char c);
@@ -139,7 +146,7 @@ word_t s_obj_vec(intptr_t fx, word_t x);
 word_t s_obj_vec_alloc(intptr_t len, word_t x);
 word_t s_obj_bytevec(intptr_t len, uint8_t b);
 word_t s_obj_bytevec_alloc(intptr_t len, word_t b);
-word_t s_obj_bytevec_from_buf(const uint8_t *buf);
+word_t s_obj_bytevec_from_buf(const char *buf);
 word_t s_obj_bignum(word_t limb, word_t sign);
 word_t s_obj_bignum_alloc(word_t limb, word_t sign);
 word_t s_obj_num(uintptr_t mag, int sign);
@@ -148,6 +155,12 @@ word_t s_obj_cons(word_t car, word_t cdr);
 word_t s_obj_cons_alloc(word_t car, word_t cdr);
 word_t* s_pair_car_ref(word_t v);
 word_t* s_pair_cdr_ref(word_t v);
+
+word_t* s_ephemeron_key_ref(word_t v);
+word_t* s_ephemeron_val_ref(word_t v);
+word_t s_ephemeron_key(word_t v);
+word_t s_ephemeron_val(word_t v);
+
 word_t s_sym_name(word_t sym);
 word_t s_sym_hash(word_t sym);
 word_t s_sym_val(word_t sym);
@@ -155,6 +168,7 @@ word_t s_sym_val_set(word_t sym, word_t val);
 
 word_t s_gc(intptr_t sz);
 word_t s_rt_add_sym_cstr(const char *buf);
+word_t s_rt_add_keyword_cstr(const char *buf);
 void s_rt_add_prim(const char *name, s_funptr_t prim);
 word_t s_rt_writeln(word_t);
 
@@ -212,6 +226,15 @@ void s_pr_cons();
 void s_pr_pair_pred();
 void s_pr_car();
 void s_pr_cdr();
+void s_pr_car_set();
+void s_pr_cdr_set();
+
+void s_pr_collect();
+void s_pr_install_guardian();
+void s_pr_ephemeron();
+void s_pr_ephemeron_pred();
+void s_pr_ephemeron_key();
+void s_pr_ephemeron_val();
 
 void s_pr_sym_pred();
 void s_pr_sym_hash();
@@ -275,22 +298,23 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     tospace_end = tospace_start + HEAP_WORDS;
     gc_markers = (bool*)tospace_end;
     if(!(((uintptr_t)fromspace_start % 8) == 0 && ((uintptr_t)tospace_start % 8) == 0)) panic(__func__);
-    for (uintptr_t i = 0; i < HEAP_WORDS; ++i) { gc_markers[i] = false; }
+    for (intptr_t i = 0; i < HEAP_WORDS; ++i) { gc_markers[i] = false; }
     free_ptr = fromspace_start;
     /* INTEPRETER */
     SYMBOLS = s_obj_vec(SYMBOLS_CAPS, make_nil());
     SYMBOLS_SIZE = 0;
+    GUARDIAN_LIST = NIL_TAG;
     TOK = make_nil();
-    QUOTE = s_rt_add_sym_cstr("quote");
-    QUASIQUOTE = s_rt_add_sym_cstr("quasiquote");
-    UNQUOTE = s_rt_add_sym_cstr("unquote");
-    UNQUOTE_SPLICING = s_rt_add_sym_cstr("unquote-splicing");
-    BEGIN = s_rt_add_sym_cstr("begin");
-    LAMBDA = s_rt_add_sym_cstr("lambda");
-    IF = s_rt_add_sym_cstr("if");
-    SET_BANG = s_rt_add_sym_cstr("set!");
-    DEFINE = s_rt_add_sym_cstr("define");
-    DEFMACRO = s_rt_add_sym_cstr("defmacro");
+    QUOTE = s_rt_add_keyword_cstr("quote");
+    QUASIQUOTE = s_rt_add_keyword_cstr("quasiquote");
+    UNQUOTE = s_rt_add_keyword_cstr("unquote");
+    UNQUOTE_SPLICING = s_rt_add_keyword_cstr("unquote-splicing");
+    BEGIN = s_rt_add_keyword_cstr("begin");
+    LAMBDA = s_rt_add_keyword_cstr("lambda");
+    IF = s_rt_add_keyword_cstr("if");
+    SET_BANG = s_rt_add_keyword_cstr("set!");
+    DEFINE = s_rt_add_keyword_cstr("define");
+    DEFMACRO = s_rt_add_keyword_cstr("defmacro");
     TEMP_SP = TEMPS;
     #if SCM_HOSTED
     s_sym_val_set(s_rt_add_sym_cstr("free-standing?"), FALSE_IMM);
@@ -302,7 +326,7 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     S_ffi_vec_t args = s_ffi_to_vec(_args);
     s_sym_val_set(s_rt_add_sym_cstr("ARGS"), _args);
     for(int i = 0; i < argc; ++i) {
-        args.ptr[i] = s_obj_bytevec_from_buf((uint8_t*)argv[i]);
+        args.ptr[i] = s_obj_bytevec_from_buf(argv[i]);
     }
     #endif
     #if SCM_FREESTANDING
@@ -334,6 +358,14 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     s_rt_add_prim("pair?", s_pr_pair_pred);
     s_rt_add_prim("car", s_pr_car);
     s_rt_add_prim("cdr", s_pr_cdr);
+    s_rt_add_prim("set-car!", s_pr_car_set);
+    s_rt_add_prim("set-cdr!", s_pr_cdr_set);
+    s_rt_add_prim("collect", s_pr_collect);
+    s_rt_add_prim("make-ephemeron", s_pr_ephemeron);
+    s_rt_add_prim("install-guardian", s_pr_install_guardian);
+    s_rt_add_prim("ephemeron?", s_pr_ephemeron_pred);
+    s_rt_add_prim("ephemeron-key", s_pr_ephemeron_key);
+    s_rt_add_prim("ephemeron-value", s_pr_ephemeron_val);
     s_rt_add_prim("symbol?", s_pr_sym_pred);
     s_rt_add_prim("symbol-hash", s_pr_sym_hash);
     s_rt_add_prim("symbol->string", s_pr_sym2str);
@@ -389,19 +421,17 @@ word_t s_rt_write(word_t v) {
     if((v & FIXNUM_MASK) == FIXNUM_TAG) {
         _s_print_int(v >> FIXNUM_SHIFT);
     }
-    else if((v & PAIR_MASK) == PAIR_TAG) {
-        word_t *ptr = (word_t*)(v - PAIR_TAG);
-        word_t car = ptr[0];
-        word_t cdr = ptr[1];
+    else if(s_obj_is_pair(v)) {
+        word_t car = CAR(v);
+        word_t cdr = CDR(v);
         
         _s_putc('(');
         s_rt_write(car);
         
         while((cdr & PAIR_MASK) == PAIR_TAG) {
             _s_putc(' ');
-            ptr = (word_t*)(cdr - PAIR_TAG);
-            car = ptr[0];
-            cdr = ptr[1];
+            car = CAR(cdr);
+            cdr = CDR(cdr);
             s_rt_write(car);
         }
         if((cdr & IMM_MASK) == NIL_TAG) {
@@ -479,6 +509,13 @@ word_t s_rt_write(word_t v) {
                 _s_putc(' ');
         }
         _s_puts(")");
+    }
+    else if (s_obj_is_ephemeron(v)) {
+        _s_puts("<ephemeron ");
+        s_rt_write(s_ephemeron_key(v));
+        _s_putc(' ');
+        s_rt_write(s_ephemeron_val(v));
+        _s_putc('>');
     }
     else if (s_obj_is_bignum(v)) {
         S_ffi_sword_t sword = s_ffi_to_sword(v);
@@ -565,7 +602,7 @@ word_t s_obj_sym(word_t name, word_t hash, word_t val) {
     if(!((hash & FIXNUM_MASK) == FIXNUM_TAG)) panic(__func__);
     word_t *_v = free_ptr;
     free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + 3));
-    _v[0] = UNBOUND_TAG;
+    _v[0] = val;
     _v[1] = hash;
     _v[2] = name;
     word_t v = (word_t)_v | SYM_TAG;
@@ -615,7 +652,7 @@ word_t s_obj_bytevec_alloc(intptr_t len, word_t b) {
     return s_obj_bytevec(len, v);
 }
 
-word_t s_obj_bytevec_from_buf(const uint8_t *buf) {
+word_t s_obj_bytevec_from_buf(const char *buf) {
     size_t len = strlen(buf);
     word_t v = s_obj_bytevec(len, s_obj_int(0));
     S_ffi_bytevec_t _v = s_ffi_to_bytevec(v);
@@ -692,10 +729,41 @@ word_t s_obj_num_alloc_from_iptr(intptr_t i) {
     return i < 0 ? s_obj_num_alloc(-(uintptr_t)i, 1) : s_obj_num_alloc(i, 0);
 }
 
+word_t s_obj_ephemeron(word_t car, word_t cdr) {
+    if(fromspace_end - free_ptr < 3) panic(__func__);
+    word_t *_v = free_ptr;
+    free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + 4));
+    _v[0] = EPHEMERON_TAG;
+    _v[1] = car;
+    _v[2] = cdr;
+    _v[3] = NIL_TAG;
+    word_t v = (word_t)_v | OBJ_TAG;
+    return v;
+}
+
+word_t s_obj_ephemeron_alloc(word_t car, word_t cdr) {
+    TEMP_PUSH(car);
+    TEMP_PUSH(cdr);
+    s_gc(4 * sizeof(word_t));
+    cdr = TEMP_POP();
+    car = TEMP_POP();
+    return s_obj_ephemeron(car, cdr);
+}
+
+word_t s_install_guardian(word_t obj, word_t tconc) {
+    word_t vec = s_obj_vec(3, 0);
+    word_t *ptr = s_ffi_to_vec(vec).ptr;
+    ptr[0] = obj;
+    ptr[1] = tconc;
+    ptr[2] = GUARDIAN_LIST;
+    GUARDIAN_LIST = vec;
+    return VOID_TAG;
+}
+
 /* djb2: hash = hash * 33 + c, init = 5381 */
 intptr_t s_rt_hash(const char *buf, size_t len) {
     intptr_t hash = 5381;
-    for(int i = 0; i < len; ++i) {
+    for(size_t i = 0; i < len; ++i) {
         hash = ((hash << 5) + hash) + buf[i];
     }
     hash = hash & SCM_INT_MAX;
@@ -719,6 +787,10 @@ bool s_obj_is_pair(word_t v) {
     return (v & PTR_MASK) == PAIR_TAG;
 }
 
+bool s_obj_is_sym(word_t v) {
+    return (v & PTR_MASK) == SYM_TAG;
+}
+
 bool s_obj_is_vec(word_t v) {
     return (v & OBJ_MASK) == OBJ_TAG && (*(word_t*)(v - OBJ_TAG) & VEC_MASK) == VEC_TAG;
 }
@@ -733,6 +805,10 @@ bool s_obj_is_str(word_t v) {
 
 bool s_obj_is_bignum(word_t v) {
     return (v & OBJ_MASK) == OBJ_TAG && (*(word_t*)(v - OBJ_TAG) & BIGNUM_MASK) == BIGNUM_TAG;
+}
+
+bool s_obj_is_ephemeron(word_t v) {
+    return (v & OBJ_MASK) == OBJ_TAG && ((*(word_t*)(v - OBJ_TAG) & OTH_MASK) == EPHEMERON_TAG);
 }
 
 // 0 - non-negative, 1 - negative
@@ -792,7 +868,7 @@ S_ffi_str_t s_ffi_to_str(word_t v) {
 }
 
 S_ffi_sym_t s_ffi_to_sym(word_t v) {
-    if((v & PTR_MASK) != SYM_TAG) panic(__func__);
+    if((v & PTR_MASK) != SYM_TAG) {s_rt_writeln(v); panic(__func__);}
     word_t *ptr = (word_t*)(v - SYM_TAG);
     return (S_ffi_sym_t) {
         .val = ptr,
@@ -802,7 +878,7 @@ S_ffi_sym_t s_ffi_to_sym(word_t v) {
 }
 
 intptr_t s_ffi_to_fixnum(word_t v) {
-    if((v & FIXNUM_MASK) != FIXNUM_TAG) {s_rt_writeln(v); panic(__func__);}
+    if((v & FIXNUM_MASK) != FIXNUM_TAG) panic(__func__);
     return v >> FIXNUM_SHIFT;
 }
 
@@ -818,7 +894,6 @@ S_ffi_sword_t s_ffi_to_sword(word_t v) {
     else if(s_obj_is_bignum(v)) {
         S_ffi_vec_t limb = s_ffi_to_vec(s_ffi_bignum_limb(v));
         if(limb.sz != 2) {panic(__func__);}
-        word_t *ptr = s_ffi_to_vec(s_ffi_bignum_limb(v)).ptr;
         uintptr_t lo = (uintptr_t)s_ffi_to_fixnum(limb.ptr[0]);
         uintptr_t hi = (uintptr_t)s_ffi_to_fixnum(limb.ptr[1]) << (SCM_NATIVE_WIDTH - FIXNUM_SHIFT - 1);
         uintptr_t uptr = lo + hi;
@@ -873,6 +948,33 @@ word_t s_pair_cdr(word_t v) {
     return *s_pair_cdr_ref(v);
 }
 
+word_t* s_ephemeron_key_ref(word_t v) {
+    if(s_obj_is_ephemeron(v)) {
+        return (word_t*)(v - OBJ_TAG) + 1;
+    }
+    else {
+        panic(__func__);
+    }
+}
+
+word_t* s_ephemeron_val_ref(word_t v) {
+    if(s_obj_is_ephemeron(v)) {
+        return (word_t*)(v - OBJ_TAG) + 2;
+    }
+    else {
+        panic(__func__);
+    }
+}
+
+word_t s_ephemeron_key(word_t v) {
+    return *s_ephemeron_key_ref(v);
+}
+
+word_t s_ephemeron_val(word_t v) {
+    return *s_ephemeron_val_ref(v);
+}
+
+
 word_t s_sym_name(word_t sym) {
     return s_ffi_to_sym(sym).name;
 }
@@ -890,12 +992,15 @@ word_t s_sym_val_set(word_t sym, word_t val) {
     return VOID_TAG;
 }
 
+void s_rt_resize_symbol_table();
 word_t s_rt_add_sym_buf(const char *buf, size_t len) {
+    // NOTE: this function also clean up broken ephemerons.
+    s_rt_resize_symbol_table();
     intptr_t hash = s_rt_hash(buf, len);
-    word_t *tbl = ((word_t*)(SYMBOLS - OBJ_TAG) + 1);
+    word_t *tbl = s_ffi_to_vec(SYMBOLS).ptr;
     word_t bucket = tbl[hash % SYMBOLS_CAPS];
     while(s_obj_is_pair(bucket)) {
-        word_t sym = CAR(bucket);
+        word_t sym = s_ephemeron_key(CAR(bucket));
         S_ffi_str_t name = s_ffi_to_str(s_sym_name(sym));
         if(memeq(name.s, name.sz, buf, len)) {
             return sym;
@@ -903,25 +1008,53 @@ word_t s_rt_add_sym_buf(const char *buf, size_t len) {
         bucket = CDR(bucket);
     }
     word_t sym = s_obj_sym(s_obj_str_from_buf(buf, len), s_obj_int(hash), UNBOUND_TAG);
-    tbl[hash % SYMBOLS_CAPS] = s_obj_cons(sym, tbl[hash % SYMBOLS_CAPS]);
+    tbl[hash % SYMBOLS_CAPS] = s_obj_cons(s_obj_ephemeron(sym, sym), tbl[hash % SYMBOLS_CAPS]);
     SYMBOLS_SIZE++;
     return sym;
 }
 
 void s_rt_resize_symbol_table() {
-    if(SYMBOLS_SIZE < SYMBOLS_CAPS * 3 || (fromspace_end - fromspace_start) < (SYMBOLS_SIZE * 3 + SYMBOLS_CAPS * 2)) {
+    {
+        // collecting symbols that are gone
+        S_ffi_vec_t table = s_ffi_to_vec(SYMBOLS);
+        intptr_t symbol_size = 0;
+        for(size_t i = 0; i < table.sz; ++i) {
+            word_t bucket = table.ptr[i];
+            word_t *prev = table.ptr + i;
+            while(s_obj_is_pair(bucket)) {
+                word_t sym = s_ephemeron_key(CAR(bucket));
+                if(sym == FALSE_IMM) {
+                    *prev = CDR(bucket);
+                    bucket = CDR(bucket);
+                    continue;
+                }
+                prev = s_pair_cdr_ref(bucket);
+                bucket = CDR(bucket);
+                symbol_size++;
+            }
+        }
+        SYMBOLS_SIZE = symbol_size;
+    }
+    intptr_t new_symbol_caps = SYMBOLS_CAPS;
+    if(SYMBOLS_SIZE >= SYMBOLS_CAPS * 3 && (fromspace_end - fromspace_start) >= (SYMBOLS_SIZE * 4 + SYMBOLS_CAPS * 2)) {
+        new_symbol_caps = SYMBOLS_CAPS * 2;
+    }
+    else if(SYMBOLS_SIZE * 3 <= SYMBOLS_CAPS * 4 && (fromspace_end - fromspace_start) >= (SYMBOLS_SIZE * 4 + SYMBOLS_CAPS / 2)) {
+        new_symbol_caps = SYMBOLS_CAPS / 2;
+    }
+    else {
         return;
     }
     S_ffi_vec_t old_table = s_ffi_to_vec(SYMBOLS);
-    word_t _new_table = s_obj_vec(SYMBOLS_CAPS * 2, make_nil());
+    word_t _new_table = s_obj_vec(new_symbol_caps, make_nil());
     S_ffi_vec_t new_table = s_ffi_to_vec(_new_table);
     intptr_t symbol_size = 0;
     for(size_t i = 0; i < old_table.sz; ++i) {
         word_t bucket = old_table.ptr[i];
         while(s_obj_is_pair(bucket)) {
-            word_t sym = CAR(bucket);
-            uintptr_t idx = s_ffi_to_fixnum(s_ffi_to_sym(sym).hash) % new_table.sz;
-            new_table.ptr[idx] = s_obj_cons(sym, new_table.ptr[idx]);
+            word_t sym = s_ephemeron_key(CAR(bucket));
+            uintptr_t idx = s_ffi_to_fixnum(s_sym_hash(sym)) % new_table.sz;
+            new_table.ptr[idx] = s_obj_cons(CAR(bucket), new_table.ptr[idx]);
             bucket = CDR(bucket);
             symbol_size++;
         }
@@ -933,6 +1066,12 @@ void s_rt_resize_symbol_table() {
 
 word_t s_rt_add_sym_cstr(const char *buf) {
     return s_rt_add_sym_buf(buf, strlen(buf));
+}
+
+word_t s_rt_add_keyword_cstr(const char *name) {
+    word_t sym = s_rt_add_sym_buf(name, strlen(name));
+    s_sym_val_set(sym, 0);
+    return sym;
 }
 
 void s_rt_add_prim(const char *name, s_funptr_t prim) {
@@ -952,6 +1091,7 @@ word_t s_copy(const word_t v) {
     if(free_ptr >= (scan_ptr - 1)) {
         panic("scan_ptr touches free_ptr :(\n");
     }
+    assert(tospace_start <= ptr && ptr < tospace_end);
     int idx = ptr - tospace_start;
     if(gc_markers[idx]) {
         return *ptr;
@@ -1059,6 +1199,20 @@ word_t s_copy(const word_t v) {
         *--scan_ptr = w;
         return w;
     }
+    else if((v & OBJ_MASK) == OBJ_TAG && (*(word_t*)(v - OBJ_TAG) & OTH_MASK) == EPHEMERON_TAG) {
+        word_t *_v = (word_t*)(v - OBJ_TAG);
+        word_t *_w = free_ptr;
+        free_ptr = (word_t*)align_to_multiple(8, (word_t)(free_ptr + 4));
+        _w[0] = EPHEMERON_TAG;
+        _w[1] = _v[1];
+        _w[2] = _v[2];
+        _w[3] = EPHEMERON_LIST;
+        word_t w = (word_t)_w | OBJ_TAG;
+        EPHEMERON_LIST = w;
+        word_t *ptr = (word_t*)(v - OBJ_TAG);
+        *ptr = w;
+        return w;
+    }
     else {
         panic(__func__);
     }
@@ -1085,7 +1239,6 @@ static inline void _s_collect_scan_ptr() {
             ptr[0] = s_copy(ptr[0]);
             ptr[1] = s_copy(ptr[1]);
             ptr[2] = s_copy(ptr[2]);
-            word_t name = ptr[2];
         }
         else if ((v & OBJ_MASK) == OBJ_TAG && (*(word_t*)(v - OBJ_TAG) & VEC_MASK) == VEC_TAG) {
             word_t len = s_ffi_to_fixnum(*(word_t*)(v - OBJ_TAG) - VEC_TAG);
@@ -1106,13 +1259,130 @@ static inline void _s_collect_scan_ptr() {
 
 static inline intptr_t max(intptr_t x, intptr_t y) { return x < y ? y : x; }
 
+static inline bool s_is_forwarded(word_t v) {
+    if(is_nonheap(v)) {
+        return false;
+    }
+    word_t *ptr = (word_t*)(v & ~PTR_MASK);
+    assert(tospace_start <= ptr && ptr < tospace_end);
+    int idx = ptr - tospace_start;
+    return gc_markers[idx];
+}
+
+static inline void _s_collect_ephemeron() {
+    bool is_changed;
+    do {
+        is_changed = false;
+        word_t ephemeron = EPHEMERON_LIST;
+        EPHEMERON_LIST = NIL_TAG;
+        while(s_obj_is_ephemeron(ephemeron)) {
+            word_t *ptr = (word_t*)(ephemeron - OBJ_TAG);
+            word_t key = ptr[1];
+            word_t val = ptr[2];
+            word_t next = ptr[3];
+            ptr[3] = NIL_TAG;
+            if(is_nonheap(key) || s_is_forwarded(key)) {
+                ptr[1] = s_copy(key);
+                ptr[2] = s_copy(val);
+                is_changed = true;
+            }
+            else {
+                ptr[3] = EPHEMERON_LIST;
+                EPHEMERON_LIST = ephemeron;
+            }
+            ephemeron = next;
+        }
+        assert(ephemeron == NIL_TAG);
+        _s_collect_scan_ptr();
+    } while(is_changed);
+    while(s_obj_is_ephemeron(EPHEMERON_LIST)) {
+        word_t *ptr = (word_t*)(EPHEMERON_LIST - OBJ_TAG);
+        ptr[1] = FALSE_IMM;
+        ptr[2] = FALSE_IMM;
+        EPHEMERON_LIST = ptr[3];
+        ptr[3] = NIL_TAG;
+    }
+    assert(EPHEMERON_LIST == NIL_TAG);
+}
+
+static inline void _s_collect_guardian() {
+    word_t pending_hold_list = NIL_TAG;
+    word_t pending_final_list = NIL_TAG;
+    while(s_obj_is_vec(GUARDIAN_LIST)) {
+        word_t guardian = GUARDIAN_LIST;
+        S_ffi_vec_t vec = s_ffi_to_vec(guardian);
+        assert(vec.sz == 3);
+        word_t *ptr = vec.ptr;
+        word_t obj = ptr[0];
+        word_t tconc = ptr[1];
+        if(is_nonheap(obj) || is_nonheap(tconc)) panic(__func__);
+        GUARDIAN_LIST = ptr[2];
+        ptr[2] = NIL_TAG;
+        if(s_is_forwarded(obj)) {
+            ptr[2] = pending_hold_list;
+            pending_hold_list = guardian;
+        }
+        else {
+            ptr[2] = pending_final_list;
+            pending_final_list = guardian;
+        }
+    }
+    assert(GUARDIAN_LIST == NIL_TAG);
+    do {
+        word_t final_list = NIL_TAG;
+        word_t *prev_next = &pending_final_list;
+        word_t curr = pending_final_list;
+        while(s_obj_is_vec(curr)) {
+            word_t *ptr = s_ffi_to_vec(curr).ptr;
+            word_t tconc = ptr[1];
+            word_t next = ptr[2];
+            if(s_is_forwarded(tconc)) {
+                *prev_next = ptr[2];
+                ptr[2] = final_list;
+                final_list = curr;
+            }
+            else {
+                prev_next = ptr + 2;
+            }
+            curr = next;
+        }
+        if(final_list == NIL_TAG) break;
+        while(s_obj_is_vec(final_list)) {
+            word_t *ptr = s_ffi_to_vec(final_list).ptr;
+            final_list = ptr[2];
+            ptr[2] = NIL_TAG;
+            word_t obj = s_copy(ptr[0]);
+            word_t tconc = s_copy(ptr[1]);
+            // add obj to the tconc
+            word_t new = s_obj_cons(FALSE_IMM, NIL_TAG);
+            { word_t* t = &CAR(CDR(tconc)); assert(fromspace_start <= t && t < fromspace_end); }
+            { word_t* t = &CDR(CDR(tconc)); assert(fromspace_start <= t && t < fromspace_end); }
+            CADR(tconc) = obj;
+            CDDR(tconc) = new;
+            CDR(tconc) = new;
+        }
+        _s_collect_scan_ptr();
+    } while(true);
+    while(s_obj_is_vec(pending_hold_list)) {
+        word_t *ptr = s_ffi_to_vec(pending_hold_list).ptr;
+        word_t obj = ptr[0];
+        word_t tconc = ptr[1];
+        word_t next = ptr[2];
+        ptr[2] = NIL_TAG;
+        assert(!is_nonheap(obj) && !is_nonheap(tconc));
+        if(s_is_forwarded(tconc)) {
+            s_install_guardian(s_copy(obj), s_copy(tconc));
+        }
+        pending_hold_list = next;
+    }
+}
+
 word_t s_gc(const intptr_t _sz) {
     bool forced_collect = _sz < 0;
     const word_t min_req_sz = 32 * sizeof(word_t);
     const word_t req_sz = forced_collect ? min_req_sz : max(_sz, min_req_sz);
     int free_space_old = fromspace_end - free_ptr;
-    int used_space_old = free_ptr - fromspace_start;
-    if((!forced_collect && req_sz <= (free_space_old * sizeof(word_t)))){
+    if((!forced_collect && req_sz <= (free_space_old * (intptr_t)sizeof(word_t)))){
         return 0;
     }
     for(int i = 0; i < HEAP_WORDS; ++i) {
@@ -1127,7 +1397,21 @@ word_t s_gc(const intptr_t _sz) {
     tospace_end = tmp;
     scan_ptr = fromspace_end;
     free_ptr = fromspace_start;
-
+    EPHEMERON_LIST = NIL_TAG;
+    // collect those symbol whose value is bound
+    {
+        S_ffi_vec_t vec = s_ffi_to_vec(SYMBOLS);
+        for(size_t i = 0; i < vec.sz; ++i) {
+            word_t bucket = vec.ptr[i];
+            while(s_obj_is_pair(bucket)) {
+                word_t sym = s_ephemeron_key(CAR(bucket));
+                if(s_obj_is_sym(sym) && s_sym_val(sym) != UNBOUND_TAG) {
+                    s_copy(sym);
+                }
+                bucket = CDR(bucket);
+            }
+        }
+    }
     EXP = s_copy(EXP);
     PROC = s_copy(PROC);
     VAL = s_copy(VAL);
@@ -1150,9 +1434,11 @@ word_t s_gc(const intptr_t _sz) {
         TEMPS[i] = s_copy(TEMPS[i]);
     }
     _s_collect_scan_ptr();
+    _s_collect_ephemeron();
+    _s_collect_guardian();
     s_rt_resize_symbol_table();
     int free_space_new = fromspace_end - free_ptr;
-    if(req_sz <= free_space_new * sizeof(word_t)) {
+    if(req_sz <= free_space_new * (intptr_t)sizeof(word_t)) {
         return free_space_new << FIXNUM_SHIFT;
     }
     else {
@@ -1182,7 +1468,7 @@ int s_lex_getc(Lexer_Stream *f) {
     }
 }
 
-int s_lex_ungetc(char ch, Lexer_Stream *f) {
+int s_lex_ungetc(int ch, Lexer_Stream *f) {
     if(f->ch != PEEKED) panic(__func__);
     f->ch = ch;
     return 0;
@@ -1202,7 +1488,7 @@ bool is_id_char(char c) {
        || (('0' <= c) && (c <= '9'))){
         return true;
     }
-    for(int i = 0; i < sizeof(extended_set)/sizeof(extended_set[0]); ++i) {
+    for(int i = 0; i < (int)sizeof(extended_set)/(int)sizeof(extended_set[0]); ++i) {
         if(extended_set[i] == c)
             return true;
     }
@@ -1242,7 +1528,7 @@ word_t s_parse_next_token(Lexer_Stream *fptr) {
     }
     for(;;) {
         int c = s_lex_getc(fptr);
-        if(c == EOF) {
+        if(c < 0 || c == EOF) {
             return EOF_TAG;
         }
         else if(c == ';') {
@@ -1251,7 +1537,7 @@ word_t s_parse_next_token(Lexer_Stream *fptr) {
             }
         }
         else if(c == ' ' || c == '\n' || c == '\t' || c == '\r') {
-            while(c == ' ' || c == '\n' || c == '\t' || c == '\r') {
+            while(c >= 0 && (c == ' ' || c == '\n' || c == '\t' || c == '\r')) {
                 c = s_lex_getc(fptr);
             }
             s_lex_ungetc(c, fptr);
@@ -1392,7 +1678,7 @@ word_t s_parse_all(Lexer_Stream *fptr) {
 
 word_t s_parse(Lexer_Stream *fptr) {
     word_t tk = s_parse_next_token(fptr);
-    if((tk & PTR_MASK) != IMM_TAG || (tk & PTR_MASK) == IMM_TAG && (tk & IMM_MASK) != TOK_TAG) {
+    if(((tk & PTR_MASK) != IMM_TAG) || ((tk & PTR_MASK) == IMM_TAG && (tk & IMM_MASK) != TOK_TAG)) {
         return tk;
     }
     else if(tk == s_obj_tok('\'')) {
@@ -1699,6 +1985,24 @@ word_t s_eval_entry() {
     return VAL;
 }
 
+word_t s_collect() {
+    // TODO: this is a temporary workaround so that the repl can use the new eval once the kernel intialize it.
+    word_t clos = s_sym_val(s_rt_add_sym_cstr("collect"));
+    if((s_funptr_t)s_ffi_from_clos(clos)[-2] != s_pr_collect) {
+        PROC = clos;
+        VAL = s_obj_cons_alloc(EXP,make_nil());
+        NEXT = (s_funptr_t)s_ffi_from_clos(clos)[-2];
+        for(;NEXT != s_cont_end;) NEXT();
+        if(_RETC != 1) panic(__func__);
+        ENV = make_nil();
+    }
+    else {
+        s_gc(-1);
+        VAL = VOID_TAG;
+    }
+    return VAL;
+}
+
 // FFI
 void s_pr_eval() {
     EXP = CAR(VAL);
@@ -1826,7 +2130,6 @@ void s_pr_bool_pred() {
     NEXT = _s_apply_cont;
 }
 
-
 void s_pr_cons() {
     _RETC = 1;
     VAL = s_obj_cons_alloc(CAR(VAL), CADR(VAL));
@@ -1835,7 +2138,7 @@ void s_pr_cons() {
 
 void s_pr_pair_pred() {
     _RETC = 1;
-    VAL = make_bool((CAR(VAL) & PTR_MASK) == PAIR_TAG);
+    VAL = make_bool(s_obj_is_pair(CAR(VAL)));
     NEXT = _s_apply_cont;
 }
 
@@ -1848,6 +2151,62 @@ void s_pr_car() {
 void s_pr_cdr() {
     _RETC = 1;
     VAL = CDAR(VAL);
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_car_set() {
+    _RETC = 1;
+    CAR(CAR(VAL)) = CADR(VAL);
+    VAL = VOID_TAG;
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_cdr_set() {
+    _RETC = 1;
+    CDR(CAR(VAL)) = CADR(VAL);
+    VAL = VOID_TAG;
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_collect() {
+    _RETC = 1;
+    if(VAL == NIL_TAG) {
+        s_gc(-1);
+    }
+    else {
+        s_gc(s_ffi_to_fixnum(CAR(VAL)));
+    }
+    VAL = VOID_TAG;
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_install_guardian() {
+    _RETC = 1;
+    VAL = s_install_guardian(CAR(VAL), CADR(VAL));
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_ephemeron() {
+    _RETC = 1;
+    VAL = s_obj_ephemeron_alloc(CAR(VAL), CADR(VAL));
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_ephemeron_pred() {
+    _RETC = 1;
+    VAL = make_bool(s_obj_is_ephemeron(CAR(VAL)));
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_ephemeron_key() {
+    _RETC = 1;
+    VAL = s_ephemeron_key(CAR(VAL));
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_ephemeron_val() {
+    _RETC = 1;
+    VAL = s_ephemeron_val(CAR(VAL));
     NEXT = _s_apply_cont;
 }
 
@@ -2095,7 +2454,7 @@ void s_pr_char_pred() {
 
 void s_pr_char2int() {
     _RETC = 1;
-    if(CAR(VAL) & IMM_MASK != CHAR_TAG) panic(__func__);
+    if((CAR(VAL) & IMM_MASK) != CHAR_TAG) panic(__func__);
     VAL = (CAR(VAL) >> (IMM_SHIFT - FIXNUM_SHIFT));
     NEXT = _s_apply_cont;
 }
@@ -2299,24 +2658,24 @@ void s_pr_foreign_call() {
 
 word_t s_sys_fwrite(word_t bv, word_t _start, word_t _end, word_t _fptr) {
     S_ffi_bytevec_t buf = s_ffi_to_bytevec(bv);
-    intptr_t start = s_ffi_to_fixnum(_start);
-    intptr_t end = s_ffi_to_fixnum(_end);
+    S_ffi_sword_t start = s_ffi_to_sword(_start);
+    S_ffi_sword_t end = s_ffi_to_sword(_end);
     assert(s_obj_is_fixnum(_fptr));
     FILE* fptr = (FILE*)_fptr;
-    assert(end >= 0 && start >= 0 && end - start <= buf.sz);
-    fwrite(buf.bv + start, 1, end - start, fptr);
+    assert(end.sign == 0 && start.sign == 0 && end.x - start.x <= buf.sz);
+    fwrite(buf.bv + start.x, 1, end.x - start.x, fptr);
     return VOID_TAG;
 }
 
 word_t s_sys_fread(word_t bv, word_t _start, word_t _end, word_t _fptr) {
     S_ffi_bytevec_t buf = s_ffi_to_bytevec(bv);
-    intptr_t start = s_ffi_to_fixnum(_start);
-    intptr_t end = s_ffi_to_fixnum(_end);
+    S_ffi_sword_t start = s_ffi_to_sword(_start);
+    S_ffi_sword_t end = s_ffi_to_sword(_end);
     assert(s_obj_is_fixnum(_fptr));
+    assert(end.sign == 0 && start.sign == 0 && end.x - start.x <= buf.sz);
     FILE* fptr = (FILE*)_fptr;
-    assert(end >= 0 && start >= 0 && end - start <= buf.sz);
-    size_t sz = fread(buf.bv + start, 1, end - start, (FILE*)fptr);
-    if(sz == end - start) {
+    size_t sz = fread(buf.bv + start.x, 1, end.x - start.x, (FILE*)fptr);
+    if(sz == end.x - start.x) {
         return s_obj_int(sz);
     }
     else if(feof(fptr)) {
@@ -2386,7 +2745,7 @@ word_t _parse_file(word_t _path) {
     _path = TEMP_POP();
     S_ffi_bytevec_t path = s_ffi_to_bytevec(_path);
     assert(path.bv[path.sz - 1] == '\0');
-    FILE *fp = fopen(path.bv, "r");
+    FILE *fp = fopen((char*)path.bv, "r");
     if(fp == NULL) panic(__func__);
     Lexer_Stream f = {.getc = _file_getc, .ch = PEEKED, .data = fp};
     word_t exps = s_parse_all(&f);

@@ -1,0 +1,7 @@
+(let ((e #f))
+  (let ((k (cons 1 2)))
+    (let ((v (cons k #t)))
+      (set! e (make-ephemeron k v))))
+  (collect)
+  (writeln (ephemeron-key e))
+  (writeln (ephemeron-value e)))

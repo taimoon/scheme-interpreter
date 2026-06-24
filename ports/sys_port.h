@@ -1,12 +1,13 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <stdnoreturn.h>
 
 #ifndef assert
 #define assert(expr) ((expr) ? (void)(0) : panic(__func__))
 #endif
 
-void panic(const char *msg, ...);
+noreturn void panic(const char *msg, ...);
 
 void sys_init(uint8_t **heap_start, uint8_t **heap_end);
 

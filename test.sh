@@ -45,6 +45,6 @@ if [[ "${BOOTSTRAP_TEST}" == "1" ]]; then
     export SCM_BOOT=compiler.scm
     time FOREIGN_IO=TRUE PRIM_CALLCC=TRUE ./interp.out -o ./a.out test/test-let.scm
     time ./a.out
-    time (make bootstrap_3 TARGET_ARCH=amd64 BOOTSTRAP_TEST=0 SCM_CC="./interp.out" SCM_NCC="./compile-amd64.out" NRPOC=4)
+    time (make bootstrap_3 TARGET_ARCH=amd64 BOOTSTRAP_TEST=0 SCM_CC="./interp.out" SCM_NCC="./compile-amd64.out" NPROC=8)
     popd
 fi

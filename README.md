@@ -128,3 +128,5 @@ To sum, `NEXT` is the goto I am using.
 
 # Reference
 - [Essentials of Programming Languages - Third Edition](https://eopl3.com/)
+- [Guardians in a generation-based garbage collector](https://dl.acm.org/doi/10.1145/173262.155110)
+- [Ephemerons: a new finalization mechanism](https://dl.acm.org/doi/10.1145/263700.263733)

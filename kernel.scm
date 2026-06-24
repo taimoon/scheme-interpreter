@@ -189,6 +189,34 @@ boot?
 
 (define values (lambda vs (call/cc (lambda (k) (apply k vs)))))
 
+(define (make-guardian)
+  (let ((tc (let ((x (cons #f '()))) (cons x x))))
+    (lambda args
+      (if (null? args)
+          (if (eq? (car tc) (cdr tc))
+              #f
+              (let ((x (car tc)))
+                (let ((y (car x)))
+                  (set-car! tc (cdr x))
+                  (set-car! x #f)
+                  (set-cdr! x #f)
+                  y)))
+          (install-guardian (car args) tc)))))
+
+(define POST-GC-HANDLERS '())
+(define (post-gc-handler-register f)
+  (set! POST-GC-HANDLERS (cons f POST-GC-HANDLERS)))
+(define (post-gc-handler-trigger)
+  (let loop ((handlers POST-GC-HANDLERS))
+    (if (pair? handlers)
+        (begin ((car handlers)) (loop (cdr handlers))))))
+(define collect
+  (let ((collect collect))
+    (lambda ()
+      (let ((v (collect)))
+        (post-gc-handler-trigger)
+        v))))
+
 (define (integer? e) (if (fixnum? e) #t (bignum? e)))
 (define (not x) (eq? x #f))
 (define (null? x) (eq? x '()))

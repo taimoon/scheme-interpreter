@@ -52,6 +52,7 @@ int main(int argc, char **argv) {
         }
         Lexer_Stream f = {.getc = file_getc, .ch = PEEKED, .data = fptr};
         for(;;) {
+            s_collect();
             EXP = s_parse(&f);
             if(EXP == EOF_TAG) {
                 ++argi;
@@ -71,7 +72,6 @@ int main(int argc, char **argv) {
             }
             s_eval_entry();
             if(VAL != VOID_TAG && LOUD_MODE) s_rt_writeln(VAL);
-            s_gc(-1);
         }
     }
     else
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
         Lexer_Stream f = {.getc = repl_getc, .ch = PEEKED, .data = NULL};
         for(;;) {
             _s_puts("> ");
-            s_gc(-1);
+            s_collect();
             EXP = s_parse(&f);
             if(f.ch != '\r') { putchar('\n'); };
             s_eval_entry();

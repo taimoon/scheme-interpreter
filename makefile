@@ -33,7 +33,16 @@ TESTS := \
 	test/control/test-coro-1.scm \
 	test/control/test-coro-2.scm \
 	test/control/test-operand-callcc-0.scm \
-	test/control/test-operand-callcc-1.scm
+	test/control/test-operand-callcc-1.scm \
+	test/ephemeron/ephemeron-test-0.scm \
+	test/ephemeron/ephemeron-test-1.scm \
+	test/ephemeron/ephemeron-test-2.scm \
+	test/ephemeron/ephemeron-test-3.scm \
+	test/ephemeron/ephemeron-test-4.scm \
+	test/guardian/guardian-0.scm \
+	test/guardian/guardian-1.scm \
+	test/guardian/guardian-2.scm \
+	test/guardian/guardian-3.scm
 
 _TST_DUMMY_EXT_0 := .tst_0
 _TST_DUMMY_TGT_0 := $(TESTS:.scm=$(_TST_DUMMY_EXT_0))
@@ -44,7 +53,7 @@ $(_TST_DUMMY_TGT_0) : %$(_TST_DUMMY_EXT_0) : $(SCM) $(LIB) %.scm %.txt
 	diff <($(SCM) $(LIB) $*.scm) $*.txt
 
 SCM_CFG=-DSCM_HOSTED=1 -DSCM_UTF32=0
-CFLAGS=-O3
+CFLAGS=-O3 -Wall -Wextra -Wpedantic
 
 .PHONY: test
 test: $(_TESTS)
