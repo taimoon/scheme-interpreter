@@ -1,3 +1,9 @@
+# 2026-07-11
+
+version: v0.5.1
+
+- drop `defmacro` special form
+
 # 2026-06-24
 
 version : v0.5

@@ -1,182 +1,237 @@
-free-standing?
-hosted?
-unicode-support?
-boot?
+(define list (lambda x x))
+(define caar (lambda (x) (car (car x))))
+(define cadr (lambda (p) (car (cdr p))))
+(define cdar (lambda (x) (cdr (car x))))
+(define cddr (lambda (x) (cdr (cdr x))))
+(define cadar (lambda (x) (car (cdr (car x)))))
+(define null? (lambda (x) (eq? x '())))
+(define not (lambda (e) (eq? e #f)))
+(define length (lambda (xs) (if (pair? xs) (+ 1 (length (cdr xs))) 0)))
+(define integer? (lambda (e) (if (fixnum? e) #t (bignum? e))))
+(define eof-object ((lambda (eof) (lambda () eof)) eof))
+(define eof-object? ((lambda (eof) (lambda (v) (eq? eof v))) eof))
+(define void (lambda () (if #f #f)))
 
-(define uniquify-methods '())
+(define (assq x xs)
+  (if (null? xs)
+      #f
+      (if (eq? x (caar xs))
+          (car xs)
+          (assq x (cdr xs)))))
 
-(define (uniquify-methods-add! kw p)
-  (set! uniquify-methods
-        (cons (cons kw p) uniquify-methods)))
+(define expanders '())
 
-(define (uniquify-methods-add-macro! kw p)
-  (set! uniquify-methods
-        (cons (cons kw (cons 'macro p)) uniquify-methods)))
+(define (expanders-add-core! kw p)
+  (set! expanders
+        (cons (cons kw p) expanders)))
 
-(defmacro (define/source name hdr . es)
-  (define (list . x) x)
-  (if (symbol? hdr)
-      (if boot?
-          (list 'begin
-                (list 'define name (list 'quote (car es)))
-                (list 'define hdr (list 'eval name)))
-          (list 'define hdr (car es)))
-      (list 'define/source name (car hdr) (cons 'lambda (cons (cdr hdr) es)))))
+(define (expanders-add-macro! kw p)
+  (set! expanders
+        (cons (cons kw (lambda (env . es) (expand (apply p es) env))) expanders)))
 
-(define/source install-macros-prog install-macros
-(lambda ()
-  (define list (lambda x x))
-  (define caar (lambda (x) (car (car x))))
-  (define cadr (lambda (p) (car (cdr p))))
-  (define cdar (lambda (x) (cdr (car x))))
-  (define cddr (lambda (x) (cdr (cdr x))))
-  (define cadar (lambda (x) (car (cdr (car x)))))
-  (define null? (lambda (x) (eq? x '())))
-  (define (not e) (eq? e #f))
-  (define (length xs) (if (pair? xs) (+ 1 (length (cdr xs))) 0))
-  (define (map f xs)
-    (if (pair? xs)
-        (cons (f (car xs)) (map f (cdr xs)))
-        '()))
-  (define (append xs ys)
-    (if (pair? xs)
-        (cons (car xs) (append (cdr xs) ys))
-        ys))
-  (define (make-begin es)
+(define (map* f xs)
+  (if (pair? xs)
+      (cons (f (car xs)) (map* f (cdr xs)))
+      (if (null? xs)
+          '()
+          (f xs))))
+
+(define (expand e env)
+  (if (pair? e)
+      (if (symbol? (car e))
+          ((lambda (r)
+           (if (if (pair? r) (procedure? (cdr r)) #f)
+               (apply (cdr r) (cons env (cdr e)))
+               (map* (lambda (e) (expand e env)) e)))
+           (assq (car e) env))
+          (map* (lambda (e) (expand e env)) e))
+      e))
+
+(define (make-begin es)
     (if (pair? (cdr es))
         (cons 'begin es)
         (car es)))
-  (define (let->lambda bs e)
-    (cons
-      (list 'lambda (map car bs) e)
-      (map cadr bs)))
-  (define (named-let->letrec fn bs es)
-    (list 'letrec (list (list fn (list 'lambda (map car bs) (make-begin es))))
-      (cons fn (map cadr bs))))
-  (defmacro (define-macro var . es)
+
+(expanders-add-macro! 'define-macro
+  (lambda (var val . es)
     (if (symbol? var)
-        (list
-          (list 'lambda '(proc)
-            (list 'uniquify-methods-add-macro! (list 'quote var) 'proc)
-            (list 'defmacro var 'proc))
-          (car es))
-        (list 'define-macro (car var) (list 'lambda (cdr var) (make-begin es)))))
-  (define-macro (define-macro var . es)
+        (list 'expanders-add-macro! (list 'quote var) val)
+        (list 'expanders-add-macro!
+          (list 'quote (car var))
+          (list 'lambda (cdr var) (make-begin (cons val es)))))))
+
+(define eval
+  ((lambda (eval)
+    (lambda (e) (eval (expand e expanders))))
+   eval))
+
+(define (map f xs)
+  (if (pair? xs)
+      (cons (f (car xs)) (map f (cdr xs)))
+      '()))
+
+(define (let->lambda bs e)
+  (cons
+    (list 'lambda (map car bs) e)
+    (map cadr bs)))
+
+(define (named-let->letrec fn bs es)
+  (list 'letrec (list (list fn (list 'lambda (map car bs) (make-begin es))))
+    (cons fn (map cadr bs))))
+
+(define-macro (let bs . es)
+  (if (symbol? bs)
+      (named-let->letrec bs (car es) (cdr es))
+      (let->lambda bs (make-begin es))))
+
+(define (append xs ys)
+  (if (pair? xs)
+      (cons (car xs) (append (cdr xs) ys))
+      ys))
+
+(define-macro (letrec bs . es)
+  (cons
+    (list 'lambda (map car bs)
+      (make-begin
+        (append
+          (map (lambda (e) (cons 'set! e)) bs)
+          es)))
+    (map (lambda _ 0) bs)))
+
+(define-macro (or . es)
+  (let or->if ((es es))
+    (if (pair? es)
+      (list 'if (car es) #t (or->if (cdr es)))
+      #f)))
+
+(define-macro (and . es)
+  (let and->if ((es es))
+    (if (pair? es)
+        (list 'if (car es) (and->if (cdr es)) #f)
+        #t)))
+
+(define (cond-clauses->ifs clauses)
+  (if (pair? clauses)
+      (let ((pred (caar clauses))
+            (conseq (make-begin (cdar clauses)))
+            (clauses (cdr clauses)))
+        (if (eq? pred 'else)
+            (if (pair? clauses)
+                (error "cond-clauses->ifs" "misplaced else" clauses)
+                conseq)
+            (if (pair? clauses)
+                (list 'if pred
+                          conseq
+                          (cond-clauses->ifs clauses))
+                (list 'if pred conseq))))
+      #f))
+
+(define-macro cond (lambda (clause . clauses) (cond-clauses->ifs (cons clause clauses))))
+
+(define (extend-env xs vs env)
+  (cond
+    ((null? xs) env)
+    ((symbol? xs) (cons (list xs vs) env))
+    ((not (pair? xs)) (error "extend-env" "ill-form" xs vs))
+    (else
+     (cons (list (car xs) (car vs)) (extend-env (cdr xs) (cdr vs) env)))))
+
+(define (maybe-apply-env x xs) (assq x xs))
+
+(expanders-add-core! 'quote
+  (lambda (env e) (list 'quote e)))
+(expanders-add-core! 'begin
+  (lambda (env . es) (make-begin (expand-each es env))))
+(expanders-add-core! 'lambda
+  (lambda (env params . es)
+    (list 'lambda params (expand (make-begin es) (extend-env params params env)))))
+(expanders-add-core! 'set!
+  (lambda (env var val) (list 'set! (expand var env) (expand val env))))
+(expanders-add-core! 'define
+  (lambda (env var . val)
     (if (symbol? var)
-        (list
-          (list 'lambda '(proc)
-            (list 'uniquify-methods-add-macro! (list 'quote var) 'proc)
-            (list 'defmacro var 'proc))
-          (car es))
-        (list 'define-macro (car var) (list 'lambda (cdr var) (make-begin es)))))
-  (define-macro (let bs . es)
-    (if (symbol? bs)
-        (named-let->letrec bs (car es) (cdr es))
-        (let->lambda bs (make-begin es))))
-  (define-macro (letrec bs . es)
-    (cons
-      (list 'lambda (map car bs)
-        (make-begin
-          (append
-            (map (lambda (e) (cons 'set! e)) bs)
-            es)))
-      (map (lambda _ 0) bs)))
-  (define (cond-clauses->ifs clauses)
-    (if (pair? clauses)
-        (let ((pred (caar clauses))
-              (conseq (make-begin (cdar clauses)))
-              (clauses (cdr clauses)))
-          (if (eq? pred 'else)
-              (if (pair? clauses)
-                  (error "cond-clauses->ifs" "misplaced else" clauses)
-                  conseq)
-              (if (pair? clauses)
-                  (list 'if pred
-                            conseq
-                            (cond-clauses->ifs clauses))
-                  (list 'if pred conseq))))
-        #f))
-  (define-macro (cond clause . clauses)
-    (cond-clauses->ifs (cons clause clauses)))
+        (list 'define var (expand (car val) (extend-env var var env)))
+        (expand (list 'define (car var) (list 'lambda (cdr var) (make-begin val))) env))))
 
-  (define (let*->let-aux bindings body)
-    (if (null? (cdr bindings))
-        (list 'let (list (car bindings)) body)
-        (list 'let (list (car bindings)) (let*->let-aux (cdr bindings) body))))
+(define (expand-each es env)
+  (map (lambda (e) (expand e env)) es))
+
+(define (expand e env)
+  (cond
+    ((not (pair? e)) e)
+    ((symbol? (car e))
+     (let ((r (assq (car e) env)))
+      (if (and (pair? r) (procedure? (cdr r)))
+          (apply (cdr r) (cons env (cdr e)))
+          (expand-each e env))))
+    (else (expand-each e env))))
+
+(define (let*->let-aux bindings body)
+  (if (null? (cdr bindings))
+      (list 'let (list (car bindings)) body)
+      (list 'let (list (car bindings)) (let*->let-aux (cdr bindings) body))))
+
+(define-macro let* (lambda (bs . es) (let*->let-aux bs (make-begin es))))
   
-  (define-macro (let* bs . es)
-    (let*->let-aux bs (make-begin es)))
+(define (expand-qq form)
+  (cond 
+    ((not (pair? form)) (list 'quote form))
+    ((eq? 'quasiquote (car form)) (expand-qq (cadr form)))
+    ((eq? 'unquote (car form)) (cadr form))
+    (else (qq-list form))))
 
-  (define-macro (and . es)
-    (if (pair? es)
-        (list 'if (car es) (cons 'and (cdr es)) #f)
-        #t))
+(define (tail-unquote? form)
+  (and
+    (pair? form)
+    (pair? (cdr form))
+    (null? (cddr form))
+    (eq? (car form) 'unquote)))
 
-  (define-macro (or . es)
-    (if (pair? es)
-        (list 'if (car es) #t (cons 'or (cdr es)))
-        #f))
-  
-  (define (expand-qq form)
-    (cond 
-      ((not (pair? form)) (list 'quote form))
-      ((eq? 'quasiquote (car form)) (expand-qq (cadr form)))
-      ((eq? 'unquote (car form)) (cadr form))
-      (else (qq-list form))))
+(define (tail-unquote a)
+  (cadr a))
 
-  (define (tail-unquote? form)
-    (and
-      (pair? form)
-      (pair? (cdr form))
-      (null? (cddr form))
-      (eq? (car form) 'unquote)))
+(define (qq-list form)
+  (cond 
+    ((null? form) ''())
+    ((not (pair? form))
+     (list 'list (expand-qq form)))
+    ((tail-unquote? form)
+     (tail-unquote form))
+    ((and (pair? (car form))
+          (eq? 'unquote-splicing (caar form)))
+      (list 'append (cadar form) (qq-list (cdr form))))
+    (else (list 'append (list 'list (expand-qq (car form))) (qq-list (cdr form))))))
 
-  (define (tail-unquote a)
-    (cadr a))
+(define-macro quasiquote expand-qq)
 
-  (define (qq-list form)
-    (cond 
-      ((null? form) ''())
-      ((not (pair? form))
-       (list 'list (expand-qq form)))
-      ((tail-unquote? form)
-       (tail-unquote form))
-      ((and (pair? (car form))
-            (eq? 'unquote-splicing (caar form)))
-        (list 'append (cadar form) (qq-list (cdr form))))
-      (else (list 'append (list 'list (expand-qq (car form))) (qq-list (cdr form))))))
-  
-  (define-macro (quasiquote e)
-    (expand-qq e))
-  
-  (define (improper-list? e)
-    (if (pair? e)
-        (improper-list? (cdr e))
-        (not (null? e))))
+(define (improper-list? e)
+  (if (pair? e)
+      (improper-list? (cdr e))
+      (not (null? e))))
 
-  (define (case-lambda->lambdas cs)
-    (define (case-lambda-clause->clause argc args c)
-      (define params (car c))
-      (define body (cons 'begin (cdr c)))
-      `(,(if (improper-list? params)
-             (list '<= (length params) argc)
-             (list '= (length params) argc))
-        (apply (lambda ,params ,body) ,args)))
-    `(let ()
-      (define (length xs) (if (pair? xs) (+ 1 (length (cdr xs))) 0))
-      (lambda args
-        (let ((argc (length args)))
-          (cond
-            ,@(map (lambda (c) (case-lambda-clause->clause 'argc 'args c)) cs)
-            (error "case-lambda" "wrong-argument-number"))))))
+(define (case-lambda->lambdas cs)
+  (define (case-lambda-clause->clause argc args c)
+    (define params (car c))
+    (define body (cons 'begin (cdr c)))
+    `(,(if (improper-list? params)
+           (list '<= (length params) argc)
+           (list '= (length params) argc))
+      (apply (lambda ,params ,body) ,args)))
+  `(let ()
+    (define (length xs) (if (pair? xs) (+ 1 (length (cdr xs))) 0))
+    (lambda args
+      (let ((argc (length args)))
+        (cond
+          ,@(map (lambda (c) (case-lambda-clause->clause 'argc 'args c)) cs)
+          (error "case-lambda" "wrong-argument-number"))))))
 
-  (define-macro (case-lambda clause . clauses)
+(define-macro case-lambda
+  (lambda (clause . clauses)
     (if (pair? clauses)
         (case-lambda->lambdas (cons clause clauses))
-        (cons 'lambda clause)))
-))
+        (cons 'lambda clause))))
 
-(install-macros)
+(define expand* (lambda (e) (expand e expanders)))
 
 (define apply
   (let ((apply apply))
@@ -217,18 +272,6 @@ boot?
         (post-gc-handler-trigger)
         v))))
 
-(define (integer? e) (if (fixnum? e) #t (bignum? e)))
-(define (not x) (eq? x #f))
-(define (null? x) (eq? x '()))
-(define eof-object (let ((eof eof)) (lambda () eof)))
-(define eof-object? (let ((eof eof)) (lambda (v) (eq? eof v))))
-(define (void) (if #f #f))
-
-(define-macro (cond-eval pred . es)
-  (if (eval pred)
-      (cons 'begin es)
-      0))
-
 (define (%ascii->utf8 s null-term?)
   (let loop ((i 0)
              (buf (make-bytevector (+ (string-length s) (if null-term? 1 0)) 0)))
@@ -237,6 +280,11 @@ boot?
         (begin
           (bytevector-u8-set! buf i (char->integer (string-ref s i)))
           (loop (+ i 1) buf)))))
+
+(define-macro (cond-eval pred . es)
+  (if (eval pred)
+      (cons 'begin es)
+      0))
 
 (cond-eval (not unicode-support?)
   (define %string->utf8 %ascii->utf8)
@@ -403,151 +451,6 @@ boot?
 (define cadddr (lambda (x) (car (cdr (cdr (cdr x))))))
 (define cddddr (lambda (x) (cdr (cdr (cdr (cdr x))))))
 
-(define (append xs ys)
-  (if (pair? xs)
-      (cons (car xs) (append (cdr xs) ys))
-      ys))
-(define gensym
-  (let ()
-    (define (abs x) (if (< x 0) (- x) x))
-
-    (define (make-lcg multiplier increment modulus x)
-      (lambda ()
-        (set! x (mod (+ increment (* multiplier x)) modulus))
-        x))
-
-    (define rand
-      (make-lcg 75 74 (+ (ash 2 16) 1) 0))
-
-    (define (random-string len)
-      (let loop ((s (make-string len))
-                 (i (- len 1)))
-        (if (< i 0)
-            s
-            (begin
-              (string-set! s i (integer->char (+ 97 (mod (rand) 26))))
-              (loop s (- i 1))))))
-    (define (int->char x)
-      (integer->char (+ x (char->integer #\0))))
-    (define (string-copy! src src-start dst dst-start n)
-      (if (= n 0)
-          dst
-          (begin
-            (string-set! dst dst-start (string-ref src src-start))
-            (string-copy! src (+ 1 src-start) dst (+ 1 dst-start) (- n 1)))))
-    (define (string-append s1 s2)
-      (let ((s (make-string (+ (string-length s1) (string-length s2)))))
-        (string-copy! s1 0 s 0 (string-length s1))
-        (string-copy! s2 0 s (string-length s1) (string-length s2))
-        s))
-    (define (number->string x)
-      (let recur ((x (abs x))
-                  (i 0))
-        (cond
-          ((> x 0)
-            (let ((s (recur (div x 10) (+ 1 i))))
-              (string-set! s (- (- (string-length s) 1) i) (int->char (mod x 10)))
-              s))
-          ((= i 0) "0")
-          (else (make-string i #\0)))))
-    (define counter 0)
-    (define (*->str sym) (if (symbol? sym) (symbol->string sym) sym))
-    (define rdm-str (string-append "-" (string-append (random-string 4) "-")))
-    (define %gensym
-      (case-lambda
-        (() (%gensym "g"))
-        ((prefix)
-          (set! counter (+ 1 counter))
-          (string->symbol
-            (string-append
-              (string-append (*->str prefix) rdm-str)
-              (number->string counter))))))
-    %gensym))
-
-(define list (lambda x x))
-(define (extend-env xs vs env)
-  (cond
-    ((null? xs) env)
-    ((symbol? xs) (cons (list xs vs) env))
-    ((not (pair? xs)) (error "extend-env" "ill-form" xs vs))
-    (else
-     (cons (list (car xs) (car vs)) (extend-env (cdr xs) (cdr vs) env)))))
-(define (assq x xs)
-  (cond
-    ((null? xs) #f)
-    ((eq? x (caar xs)) (car xs))
-    (else (assq x (cdr xs)))))
-(define (maybe-apply-env x env) (assq x env))
-(define (make-env) '())
-(define (make-begin es) (if (pair? (cdr es)) (cons 'begin es) (car es)))
-
-(define (uniquify-each es env)
-  (if (pair? es)
-      (cons (uniquify (car es) env) (uniquify-each (cdr es) env))
-      (if (null? es)
-          '()
-          (uniquify es env))))
-
-(define-macro (define/source name hdr . es)
-  (if (symbol? hdr)
-      (if boot?
-          `(begin (define ,name ',(car es))
-                  (define ,hdr (eval ,name)))
-          `(define ,hdr ,(car es)))
-      `(define/source ,name ,(car hdr) (lambda ,(cdr hdr) . ,es))))
-
-(define/source uniquify-prog (uniquify e env)
-  (cond
-    ((symbol? e)
-     (let ((r (maybe-apply-env e env)))
-      (if r (cadr r) e)))
-    ((not (pair? e)) e)
-    ((symbol? (car e))
-     (define r (maybe-apply-env (car e) env))
-     (cond
-      ((not (pair? r))
-       (cons (car e) (uniquify-each (cdr e) env)))
-      ((procedure? (cdr r))
-       (apply (cdr r) env (cdr e)))
-      ((and (pair? (cdr r)) (eq? (cadr r) 'macro) (procedure? (cddr r)))
-       (uniquify (apply (cddr r) (cdr e)) env))
-      (else (uniquify-each e env))))
-    (else (uniquify-each e env))))
-
-(define (uniquify* e)
-  (uniquify e uniquify-methods))
-(define (map* f xs)
-  (if (pair? xs)
-      (cons (f (car xs)) (map* f (cdr xs)))
-      (if (null? xs)
-          '()
-          (f xs))))
-(uniquify-methods-add! 'quote
-  (lambda (env e) (list 'quote e)))
-(uniquify-methods-add! 'begin
-  (lambda (env . es) (make-begin (uniquify-each es env))))
-(uniquify-methods-add! 'lambda
-  (lambda (env params . es)
-    (let* ((params* (map* gensym params))
-           (env (extend-env params params* env)))
-      `(lambda ,params* ,(uniquify (make-begin es) env)))))
-(uniquify-methods-add! 'set!
-  (lambda (env var val) (list 'set! (uniquify var env) (uniquify val env))))
-(uniquify-methods-add! 'define
-  (lambda (env var . val)
-    (if (symbol? var)
-        (list 'define var (uniquify (car val) (extend-env var var env)))
-        (uniquify (list 'define (car var) (list 'lambda (cdr var) (make-begin val))) env))))
-(uniquify-methods-add! 'defmacro
-  (lambda (env var . val)
-    (if (symbol? var)
-        (list 'defmacro var (uniquify (car val) (extend-env var var env)))
-        (uniquify (list 'defmacro (car var) (list 'lambda (cdr var) (make-begin val))) env))))
-
-(define eval (let ((eval eval)) (lambda (e) (eval (uniquify* e)))))
-
-(if boot? (begin (eval uniquify-prog) ((eval install-macros-prog))))
-
 (define (vector=? v w)
   (cond
     ((eq? v w) #t)
@@ -616,14 +519,74 @@ boot?
         (parse-file (%string->utf8 path #t)))))
 
   (define (read-sexps-from-path path) (parse-file path))
-      
+  (define (for-each f xs)
+    (let loop ((xs xs))
+      (if (pair? xs)
+          (begin (f (car xs)) (loop (cdr xs))))))
   (define load
     (lambda (path)
-      (eval (make-begin (map uniquify* (read-sexps-from-path path))))))
+      (for-each (lambda (e) (eval (expand* e))) (read-sexps-from-path path))))
   
   (define-macro (include path)
-    (uniquify* (make-begin (read-sexps-from-path path))))
+    (make-begin (read-sexps-from-path path)))
 ) ;; cond-eval hosted?
+
+(define gensym
+  (let ()
+    (define (abs x) (if (< x 0) (- x) x))
+
+    (define (make-lcg multiplier increment modulus x)
+      (lambda ()
+        (set! x (mod (+ increment (* multiplier x)) modulus))
+        x))
+
+    (define rand
+      (make-lcg 75 74 (+ (ash 2 16) 1) 0))
+
+    (define (random-string len)
+      (let loop ((s (make-string len))
+                 (i (- len 1)))
+        (if (< i 0)
+            s
+            (begin
+              (string-set! s i (integer->char (+ 97 (mod (rand) 26))))
+              (loop s (- i 1))))))
+    (define (int->char x)
+      (integer->char (+ x (char->integer #\0))))
+    (define (string-copy! src src-start dst dst-start n)
+      (if (= n 0)
+          dst
+          (begin
+            (string-set! dst dst-start (string-ref src src-start))
+            (string-copy! src (+ 1 src-start) dst (+ 1 dst-start) (- n 1)))))
+    (define (string-append s1 s2)
+      (let ((s (make-string (+ (string-length s1) (string-length s2)))))
+        (string-copy! s1 0 s 0 (string-length s1))
+        (string-copy! s2 0 s (string-length s1) (string-length s2))
+        s))
+    (define (number->string x)
+      (let recur ((x (abs x))
+                  (i 0))
+        (cond
+          ((> x 0)
+            (let ((s (recur (div x 10) (+ 1 i))))
+              (string-set! s (- (- (string-length s) 1) i) (int->char (mod x 10)))
+              s))
+          ((= i 0) "0")
+          (else (make-string i #\0)))))
+    (define counter 0)
+    (define (*->str sym) (if (symbol? sym) (symbol->string sym) sym))
+    (define rdm-str (string-append "-" (string-append (random-string 4) "-")))
+    (define %gensym
+      (case-lambda
+        (() (%gensym "g"))
+        ((prefix)
+          (set! counter (+ 1 counter))
+          (string->symbol
+            (string-append
+              (string-append (*->str prefix) rdm-str)
+              (number->string counter))))))
+    %gensym))
 
 (include "lib/match-defmacro.scm")
 (define-macro (match . e) (compile-match (cons 'match e)))
@@ -705,7 +668,7 @@ boot?
      (define op (open-output-file out))
      (for-each
       (lambda (inp)
-       (for-each (lambda (e) (let ((e (simplify-bytevector (uniquify* e)))) (if (not (integer? e)) (writeln e op)))) (cons '(set! boot? #f) (read-sexps-from-path inp))))
+       (for-each (lambda (e) (let ((e (simplify-bytevector (expand* e)))) (if (not (integer? e)) (writeln e op)))) (cons '(set! boot? #f) (read-sexps-from-path inp))))
       inp)
      (close-port op))
     ((,inp . ,inps)

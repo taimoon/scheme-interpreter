@@ -25,8 +25,8 @@ typedef intptr_t word_t;
 #define PTR_MASK        0b111
 
 #define SCM_FIXNUM_WIDTH    (SCM_NATIVE_WIDTH - FIXNUM_SHIFT)
-#define SCM_INT_MAX       (((word_t)1 << (SCM_NATIVE_WIDTH - FIXNUM_SHIFT - 1)) - 1)
-#define SCM_INT_MIN       (-((word_t)1 << (SCM_NATIVE_WIDTH - FIXNUM_SHIFT - 1)))
+#define SCM_INT_MAX         (((word_t)1 << (SCM_NATIVE_WIDTH - FIXNUM_SHIFT - 1)) - 1)
+#define SCM_INT_MIN         (-((word_t)1 << (SCM_NATIVE_WIDTH - FIXNUM_SHIFT - 1)))
 
 #define FIXNUM_TAG      0b000
 #define PAIR_TAG        0b001
@@ -88,6 +88,7 @@ typedef struct S_ffi_sword_t { uintptr_t x; int sign; } S_ffi_sword_t;
 intptr_t SYMBOLS_CAPS = 16;
 intptr_t SYMBOLS_SIZE;
 s_funptr_t NEXT;
+uintptr_t NEXT_I = 0;
 word_t EXP;
 word_t PROC;
 word_t VAL;
@@ -105,7 +106,7 @@ word_t LAMBDA;
 word_t IF;
 word_t SET_BANG;
 word_t DEFINE;
-word_t DEFMACRO;
+word_t *INTERP_REGS[] = { &EXP, &PROC, &VAL, &VALS, &CONT, &ENV, &SYMBOLS, &TOK, &QUOTE, &UNQUOTE_SPLICING, &UNQUOTE, &QUASIQUOTE, &BEGIN, &LAMBDA, &IF, &SET_BANG, &DEFINE};
 word_t TEMPS[8];
 word_t *TEMP_SP;
 word_t EPHEMERON_LIST;
@@ -237,6 +238,7 @@ void s_pr_ephemeron_key();
 void s_pr_ephemeron_val();
 
 void s_pr_sym_pred();
+void s_pr_sym_val();
 void s_pr_sym_hash();
 void s_pr_sym2str();
 void s_pr_str2sym();
@@ -314,7 +316,6 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     IF = s_rt_add_keyword_cstr("if");
     SET_BANG = s_rt_add_keyword_cstr("set!");
     DEFINE = s_rt_add_keyword_cstr("define");
-    DEFMACRO = s_rt_add_keyword_cstr("defmacro");
     TEMP_SP = TEMPS;
     #if SCM_HOSTED
     s_sym_val_set(s_rt_add_sym_cstr("free-standing?"), FALSE_IMM);
@@ -367,6 +368,7 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     s_rt_add_prim("ephemeron-key", s_pr_ephemeron_key);
     s_rt_add_prim("ephemeron-value", s_pr_ephemeron_val);
     s_rt_add_prim("symbol?", s_pr_sym_pred);
+    s_rt_add_prim("%symbol-value", s_pr_sym_val);
     s_rt_add_prim("symbol-hash", s_pr_sym_hash);
     s_rt_add_prim("symbol->string", s_pr_sym2str);
     s_rt_add_prim("string->symbol", s_pr_str2sym);
@@ -1412,24 +1414,9 @@ word_t s_gc(const intptr_t _sz) {
             }
         }
     }
-    EXP = s_copy(EXP);
-    PROC = s_copy(PROC);
-    VAL = s_copy(VAL);
-    VALS = s_copy(VALS);
-    CONT = s_copy(CONT);
-    ENV = s_copy(ENV);
-    SYMBOLS = s_copy(SYMBOLS);
-    TOK = s_copy(TOK);
-    QUOTE = s_copy(QUOTE);
-    UNQUOTE_SPLICING = s_copy(UNQUOTE_SPLICING);
-    UNQUOTE = s_copy(UNQUOTE);
-    QUASIQUOTE = s_copy(QUASIQUOTE);
-    BEGIN = s_copy(BEGIN);
-    LAMBDA = s_copy(LAMBDA);
-    IF = s_copy(IF);
-    SET_BANG = s_copy(SET_BANG);
-    DEFINE = s_copy(DEFINE);
-    DEFMACRO = s_copy(DEFMACRO);
+    for(int i = 0; i < (int)sizeof(INTERP_REGS)/sizeof(*INTERP_REGS); ++i) {
+        *INTERP_REGS[i] = s_copy(*INTERP_REGS[i]);
+    }
     for(intptr_t i = 0, n = TEMP_SP - TEMPS; i < n; ++i) {
         TEMPS[i] = s_copy(TEMPS[i]);
     }
@@ -1798,11 +1785,7 @@ void s_cont_set() {
     ENV = _s_ffi_from_clos(CONT)[1];
     word_t FORM = _s_ffi_from_clos(CONT)[3];
     PROC = _s_ffi_from_clos(CONT)[2]; // name
-    if(FORM == DEFMACRO) {
-        s_ffi_from_clos(VAL)[-2] = (word_t)s_cont_macro_val;
-        s_sym_val_set(PROC, VAL);
-    }
-    else if(FORM == SET_BANG) {
+    if(FORM == SET_BANG) {
         EXP = s_rt_apply_env_maybe(PROC, ENV);
         if(EXP == FALSE_IMM) {
             s_sym_val_set(PROC, VAL);
@@ -1896,7 +1879,7 @@ void s_eval() {
         s_rt_writeln(EXP);
         panic("unknown form!");
     }
-    else if(CAR(EXP) == DEFINE || CAR(EXP) == SET_BANG || CAR(EXP) == DEFMACRO) {
+    else if(CAR(EXP) == DEFINE || CAR(EXP) == SET_BANG) {
         VAL = s_obj_clos_alloc(s_cont_set, s_obj_int(4));
         // (def var val)
         if((CADR(EXP) & PTR_MASK) == SYM_TAG) {
@@ -1979,7 +1962,7 @@ word_t s_eval_entry() {
     else {
         NEXT = s_eval;
     }
-    for(;NEXT != s_cont_end;) NEXT();
+    for(;NEXT != s_cont_end;++NEXT_I) NEXT();
     if(_RETC != 1) panic(__func__);
     ENV = make_nil();
     return VAL;
@@ -1992,7 +1975,7 @@ word_t s_collect() {
         PROC = clos;
         VAL = s_obj_cons_alloc(EXP,make_nil());
         NEXT = (s_funptr_t)s_ffi_from_clos(clos)[-2];
-        for(;NEXT != s_cont_end;) NEXT();
+        for(;NEXT != s_cont_end;++NEXT_I) NEXT();
         if(_RETC != 1) panic(__func__);
         ENV = make_nil();
     }
@@ -2013,7 +1996,7 @@ void s_pr_eval() {
 void s_pr_apply_2() {
     PROC = CAR(VAL);
     VAL = CADR(VAL);
-    NEXT = (s_funptr_t)_s_ffi_from_clos(PROC)[-2];
+    NEXT = (s_funptr_t)s_ffi_from_clos(PROC)[-2];
 }
 
 void implicit_ret_mv() {
@@ -2213,6 +2196,12 @@ void s_pr_ephemeron_val() {
 void s_pr_sym_pred() {
     _RETC = 1;
     VAL = make_bool((CAR(VAL) & PTR_MASK) == SYM_TAG);
+    NEXT = _s_apply_cont;
+}
+
+void s_pr_sym_val() {
+    _RETC = 1;
+    VAL = *s_ffi_to_sym(CAR(VAL)).val;
     NEXT = _s_apply_cont;
 }
 

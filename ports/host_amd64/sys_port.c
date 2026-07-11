@@ -23,7 +23,7 @@ void _s_puts(const char* s) {
 void sys_init(uint8_t **heap_start, uint8_t **heap_end) {
     const char *_heap_size = getenv("HEAP_SIZE");
     intptr_t sz = _heap_size == NULL ? 0 : atoll(_heap_size);
-    sz = sz <= 0 ? 128 << 10 : sz;
+    sz = sz <= 0 ? 256 << 10 : sz;
     *heap_start = aligned_alloc(8, sz);
     *heap_end = *heap_start + sz;
 }

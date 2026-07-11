@@ -1,13 +1,75 @@
-(define (make-begin es) (if (pair? (cdr es)) (cons 'begin es) (car es)))
-(define (not b) (if b #f #t))
-(define cadr (lambda (x) (car (cdr x))))
+(define list (lambda x x))
 (define caar (lambda (x) (car (car x))))
+(define cadr (lambda (p) (car (cdr p))))
 (define cdar (lambda (x) (cdr (car x))))
+(define cddr (lambda (x) (cdr (cdr x))))
+(define cadar (lambda (x) (car (cdr (car x)))))
+(define null? (lambda (x) (eq? x '())))
+(define (not e) (eq? e #f))
+(define (length xs) (if (pair? xs) (+ 1 (length (cdr xs))) 0))
+(define (integer? e) (if (fixnum? e) #t (bignum? e)))
+(define eof-object ((lambda (eof) (lambda () eof)) eof))
+(define eof-object? ((lambda (eof) (lambda (v) (eq? eof v))) eof))
+(define (void) (if #f #f))
+
+(define (assq x xs)
+  (if (null? xs)
+      #f
+      (if (eq? x (caar xs))
+          (car xs)
+          (assq x (cdr xs)))))
+
+(define expanders '())
+
+(define (expanders-add-core! kw p)
+  (set! expanders
+        (cons (cons kw p) expanders)))
+
+(define (expanders-add-macro! kw p)
+  (set! expanders
+        (cons (cons kw (lambda (env . es) (expand (apply p es) env))) expanders)))
+
+(define (map* f xs)
+  (if (pair? xs)
+      (cons (f (car xs)) (map* f (cdr xs)))
+      (if (null? xs)
+          '()
+          (f xs))))
+
 (define (map f xs)
   (if (pair? xs)
       (cons (f (car xs)) (map f (cdr xs)))
       '()))
-(define list (lambda x x))
+
+(define (expand e env)
+  (if (pair? e)
+      (if (symbol? (car e))
+          ((lambda (r)
+           (if (if (pair? r) (procedure? (cdr r)) #f)
+               (apply (cdr r) (cons env (cdr e)))
+               (map* (lambda (e) (expand e env)) e)))
+           (assq (car e) env))
+          (map* (lambda (e) (expand e env)) e))
+      e))
+
+(define (make-begin es)
+    (if (pair? (cdr es))
+        (cons 'begin es)
+        (car es)))
+
+(expanders-add-macro! 'define-macro
+  (lambda (var val . es)
+    (if (symbol? var)
+        (list 'expanders-add-macro! (list 'quote var) val)
+        (list 'expanders-add-macro!
+          (list 'quote (car var))
+          (list 'lambda (cdr var) (make-begin (cons val es)))))))
+
+(define eval
+  ((lambda (eval)
+    (lambda (e) (eval (expand e expanders))))
+   eval))
+
 (define (append xs ys) (if (pair? xs) (cons (car xs) (append (cdr xs) ys)) ys))
 (define (named-let->letrec fn bs es)
   (list 'letrec (list (list fn (list 'lambda (map car bs) (make-begin es))))
@@ -16,11 +78,11 @@
   (cons
     (list 'lambda (map car bs) e)
     (map cadr bs)))
-(defmacro (let bs . es)
+(define-macro (let bs . es)
   (if (symbol? bs)
       (named-let->letrec bs (car es) (cdr es))
       (let->lambda bs (make-begin es))))
-(defmacro (letrec bs . es)
+(define-macro (letrec bs . es)
   (cons
     (list 'lambda (map car bs)
       (make-begin
@@ -43,14 +105,13 @@
                           (cond-clauses->ifs clauses))
                 (list 'if pred conseq))))
       #f))
-(defmacro (cond clause . clauses)
+(define-macro (cond clause . clauses)
   (cond-clauses->ifs (cons clause clauses)))
 (define values (lambda vs (call/cc (lambda (k) (apply k vs)))))
-(define eof-object (let ((eof eof)) (lambda () eof)))
 (define (fixnum-width) %fixnum-width)
 (define (greatest-fixnum) %greatest-fixnum)
 (define (least-fixnum) %least-fixnum)
-(defmacro (and . es)
+(define-macro (and . es)
   (define list (lambda x x))
   (if (pair? es)
       (list 'if (car es) (cons'and (cdr es)) #f)

@@ -33,7 +33,5 @@
 test
 even?
 odd?
-(defmacro (and x y) (list 'if x y #f))
-(and #f undefined)
 (apply + '(2 3))
 (exit)

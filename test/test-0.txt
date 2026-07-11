@@ -54,9 +54,6 @@ yay!
 long-gone
 > even?
 > odd?
-> (defmacro (and x y) (list (quote if) x y #f))
-> (and #f undefined)
-#f
 > (apply + (quote (2 3)))
 5
 > (exit)
