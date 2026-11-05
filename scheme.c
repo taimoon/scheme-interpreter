@@ -73,7 +73,7 @@ intptr_t HEAP_WORDS;
 word_t *free_ptr, *scan_ptr;
 word_t *fromspace_start, *fromspace_end;
 word_t *tospace_start, *tospace_end;
-static bool *gc_markers;
+uint8_t *gc_markers;
 
 typedef void (*s_funptr_t)();
 typedef struct S_ffi_str_t { size_t sz; char *s; } S_ffi_str_t;
@@ -119,6 +119,16 @@ intptr_t _RETC;
 static inline word_t align_to_multiple(word_t alignment, word_t offset) {
     return (offset + (alignment - 1)) & -alignment;
 }
+
+static inline bool bit_ref(uint8_t *masks, intptr_t u) {
+    return (masks[u >> 3] >> (u & 7)) & 1;
+}
+
+static inline void bit_on(uint8_t *masks, intptr_t u) {
+    uint8_t mask = (1u << (u & 7));
+    masks[u >> 3] |= mask;
+}
+
 
 S_ffi_bytevec_t s_ffi_to_bytevec(word_t v);
 S_ffi_vec_t s_ffi_to_vec(word_t v);
@@ -289,8 +299,9 @@ void s_pr_bignum_sign();
 
 void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     // 2 * w_sz * n + n * b_sz = (2 * w_sz + b_sz) * n
+    // 2 * w_sz * n + n = (2 * w_sz + 1) * n
     if(!((uintptr_t)heap_start % 8 == 0 && heap_end > heap_start)) panic(__func__);
-    uintptr_t div_size = 2 * sizeof(word_t) + sizeof(bool);
+    uintptr_t div_size = 2 * sizeof(word_t) + 1;
     uintptr_t heap_size = (uintptr_t)heap_end - (uintptr_t)heap_start;
     heap_size = heap_size - heap_size % (8 * div_size);
     HEAP_WORDS = heap_size / div_size;
@@ -298,9 +309,8 @@ void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
     fromspace_end = fromspace_start + HEAP_WORDS;
     tospace_start = fromspace_end;
     tospace_end = tospace_start + HEAP_WORDS;
-    gc_markers = (bool*)tospace_end;
+    gc_markers = (uint8_t*)tospace_end;
     if(!(((uintptr_t)fromspace_start % 8) == 0 && ((uintptr_t)tospace_start % 8) == 0)) panic(__func__);
-    for (intptr_t i = 0; i < HEAP_WORDS; ++i) { gc_markers[i] = false; }
     free_ptr = fromspace_start;
     /* INTEPRETER */
     SYMBOLS = s_obj_vec(SYMBOLS_CAPS, make_nil());
@@ -1095,10 +1105,10 @@ word_t s_copy(const word_t v) {
     }
     assert(tospace_start <= ptr && ptr < tospace_end);
     int idx = ptr - tospace_start;
-    if(gc_markers[idx]) {
+    if(bit_ref(gc_markers,idx)){
         return *ptr;
     }
-    gc_markers[idx] = true;
+    bit_on(gc_markers, idx);
     if((v & PTR_MASK) == PAIR_TAG) {
         word_t *ptr = (word_t*)(v - PAIR_TAG);
         word_t *_w = free_ptr;
@@ -1268,7 +1278,7 @@ static inline bool s_is_forwarded(word_t v) {
     word_t *ptr = (word_t*)(v & ~PTR_MASK);
     assert(tospace_start <= ptr && ptr < tospace_end);
     int idx = ptr - tospace_start;
-    return gc_markers[idx];
+    return bit_ref(gc_markers, idx);
 }
 
 static inline void _s_collect_ephemeron() {
@@ -1387,8 +1397,9 @@ word_t s_gc(const intptr_t _sz) {
     if((!forced_collect && req_sz <= (free_space_old * (intptr_t)sizeof(word_t)))){
         return 0;
     }
-    for(int i = 0; i < HEAP_WORDS; ++i) {
-        gc_markers[i] = false;
+    const uintptr_t gc_markers_len = ((uint8_t*)fromspace_end - (uint8_t*)fromspace_start) >> (FIXNUM_SHIFT + 3); // divide by (WORDSIZE + 8)
+    for(uintptr_t i = 0; i < gc_markers_len; ++i) {
+        gc_markers[i] = 0;
     }
     word_t *tmp;
     tmp = fromspace_start;
