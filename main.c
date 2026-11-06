@@ -25,13 +25,11 @@ int repl_getc(void*) {
 }
 
 int main(int argc, char **argv) {
-    uint8_t *heap_start = NULL;
-    uint8_t *heap_end = NULL;
-    sys_init(&heap_start, &heap_end);
+    s_heap_config_t cfg = sys_init();
 #ifdef __STDC_HOSTED__
-    s_rt_init(heap_start, heap_end, argc, argv);
+    s_rt_init(cfg, argc, argv);
 #else
-    s_rt_init(heap_start, heap_end, 0, NULL);
+    s_rt_init(cfg, 0, NULL);
 #endif
     ENV = s_rt_init_env();
     bool REPL_MODE = true;

@@ -20,12 +20,20 @@ void _s_puts(const char* s) {
     printf("%s", s);
 }
 
-void sys_init(uint8_t **heap_start, uint8_t **heap_end) {
+s_heap_config_t sys_init() {
     const char *_heap_size = getenv("HEAP_SIZE");
     intptr_t sz = _heap_size == NULL ? 0 : atoll(_heap_size);
     sz = sz <= 0 ? 256 << 10 : sz;
-    *heap_start = aligned_alloc(8, sz);
-    *heap_end = *heap_start + sz;
+    s_heap_config_t cfg;
+    cfg.sz = sz;
+    cfg.fromspace_start = aligned_alloc(8, sz);
+    cfg.fromspace_end = (uint8_t*)cfg.fromspace_start + sz;
+    cfg.tospace_start = aligned_alloc(8, sz);
+    cfg.tospace_end = (uint8_t*)cfg.tospace_start + sz;
+    cfg.gc_markers = aligned_alloc(8, sz / (sizeof(intptr_t) * 8));
+    if(cfg.fromspace_start == NULL) panic(__FUNCTION__);
+    if(cfg.tospace_start == NULL) panic(__FUNCTION__);    
+    return cfg;
 }
 
 size_t strlen(const char* s) {

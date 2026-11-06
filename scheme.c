@@ -297,19 +297,14 @@ void s_pr_make_bignum();
 void s_pr_bignum_limb();
 void s_pr_bignum_sign();
 
-void s_rt_init(void* heap_start, void* heap_end, int argc, char ** argv) {
+void s_rt_init(s_heap_config_t cfg, int argc, char ** argv) {
     // 2 * w_sz * n + n * b_sz = (2 * w_sz + b_sz) * n
-    // 2 * w_sz * n + n = (2 * w_sz + 1) * n
-    if(!((uintptr_t)heap_start % 8 == 0 && heap_end > heap_start)) panic(__func__);
-    uintptr_t div_size = 2 * sizeof(word_t) + 1;
-    uintptr_t heap_size = (uintptr_t)heap_end - (uintptr_t)heap_start;
-    heap_size = heap_size - heap_size % (8 * div_size);
-    HEAP_WORDS = heap_size / div_size;
-    fromspace_start = (word_t*)heap_start;
-    fromspace_end = fromspace_start + HEAP_WORDS;
-    tospace_start = fromspace_end;
-    tospace_end = tospace_start + HEAP_WORDS;
-    gc_markers = (uint8_t*)tospace_end;
+    HEAP_WORDS = cfg.sz / sizeof(word_t);
+    fromspace_start = cfg.fromspace_start;
+    fromspace_end = cfg.fromspace_end;
+    tospace_start = cfg.tospace_start;
+    tospace_end = cfg.tospace_end;
+    gc_markers = cfg.gc_markers;
     if(!(((uintptr_t)fromspace_start % 8) == 0 && ((uintptr_t)tospace_start % 8) == 0)) panic(__func__);
     free_ptr = fromspace_start;
     /* INTEPRETER */
