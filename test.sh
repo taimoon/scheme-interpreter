@@ -16,7 +16,7 @@ popd
 # test
 diff <(BATCH_MODE= LOUD_MODE= ./interp.out test/test-0.scm) test/test-0.txt
 time BATCH_MODE= make test
-HEAP_SIZE=$(echo "print(16 * (1 << 20))" | python3)
+HEAP_SIZE=$(echo "print(4 * (1 << 20))" | python3)
 time RIDER=KICK SCM_BOOT=kernel.scm HEAP_SIZE=${HEAP_SIZE} BATCH_MODE= ./interp.out -E kernel-rider.scm kernel.scm
 time SCM_BOOT=kernel-rider.scm HEAP_SIZE=${HEAP_SIZE} BATCH_MODE= ./interp.out -E kernel-exp.scm kernel.scm
 time SCM_BOOT=kernel-rider.scm HEAP_SIZE=${HEAP_SIZE} BATCH_MODE= ./interp.out -F kernel-free.scm kernel.scm
@@ -31,7 +31,7 @@ if [[ "${BOOTSTRAP_TEST}" == "1" ]]; then
     cp ../interp.out .
     source env.sh
     export BATCH_MODE=
-    export HEAP_SIZE=$(echo "print(256 * (1 << 20))" | python3)
+    export HEAP_SIZE=$(echo "print(64 * (1 << 20))" | python3)
     time SCM_BOOT="kernel-rider.scm" ./interp.out -E compiler-impl.scm \
         lib/scheme-libs.scm \
         lib/set.scm \
